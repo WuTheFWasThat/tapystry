@@ -78,3 +78,27 @@ def test_never_join():
         return
 
     assert tap.run(fn) is None
+
+
+def test_no_arg():
+    def sender(value):
+        yield tap.Send('key', value)
+
+    def fn():
+        yield tap.Fork(sender)
+        return
+
+    with pytest.raises(TypeError):
+        tap.run(fn)
+
+
+def test_call():
+    def random(value):
+        yield tap.Send('key', value)
+        return 10
+
+    def fn():
+        x = yield tap.Call(random, 5)
+        return x
+
+    assert tap.run(fn) == 10

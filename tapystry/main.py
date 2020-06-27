@@ -20,6 +20,13 @@ class Receive(Effect):
         self.key = key
 
 
+class Call(Effect):
+    def __init__(self, gen, *args, **kwargs):
+        self.gen = gen
+        self.args = args
+        self.kwargs = kwargs
+
+
 class Fork(Effect):
     def __init__(self, gen, *args, **kwargs):
         self.gen = gen
@@ -106,6 +113,11 @@ def run(gen, args=(), kwargs=None):
             q.put(_QueueItem(item.strand))
         elif isinstance(effect, Receive):
             wait_key = "send." + effect.key
+            waiting[wait_key].append(item.strand)
+        elif isinstance(effect, Call):
+            strand = Strand(effect.gen, effect.args, effect.kwargs)
+            q.put(_QueueItem(strand))
+            wait_key = "join." + strand.id
             waiting[wait_key].append(item.strand)
         elif isinstance(effect, Fork):
             strand = Strand(effect.gen, effect.args, effect.kwargs)

@@ -1,2 +1,4 @@
-from .main import run, Send, Receive, Fork, Join, Call, Cancel, TapystryError
-from .effects import Parallel
+from .main import run, Strand, TapystryError
+
+from .main import Send, Receive, CallFork, First, Call, Cancel
+from .effects import Fork, Parallel, Join, Race

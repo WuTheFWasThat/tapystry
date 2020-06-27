@@ -20,8 +20,8 @@ def test_receive():
         return value
 
     def fn():
-        recv_task = yield tap.Fork(receiver)
-        send_task = yield tap.Fork(sender, 5)
+        recv_task = yield tap.CallFork(receiver)
+        send_task = yield tap.CallFork(sender, 5)
         yield tap.Join(send_task)
         value = yield tap.Join(recv_task)
         return value
@@ -39,8 +39,8 @@ def test_never_receive():
 
     def fn():
         # fork in wrong order!
-        send_task = yield tap.Fork(sender, 5)
-        recv_task = yield tap.Fork(receiver)
+        send_task = yield tap.CallFork(sender, 5)
+        recv_task = yield tap.CallFork(receiver)
         yield tap.Join(send_task)
         value = yield tap.Join(recv_task)
         return value
@@ -74,7 +74,7 @@ def test_never_join():
         yield tap.Send('key2', value)
 
     def fn():
-        yield tap.Fork(sender, 5)
+        yield tap.CallFork(sender, 5)
         return
 
     assert tap.run(fn) is None
@@ -85,7 +85,7 @@ def test_no_arg():
         yield tap.Send('key', value)
 
     def fn():
-        yield tap.Fork(sender)
+        yield tap.CallFork(sender)
         return
 
     with pytest.raises(TypeError):
@@ -117,10 +117,15 @@ def test_cancel():
         return 10
 
     def fn():
-        task = yield tap.Fork(add_three, 5)
+        task = yield tap.CallFork(add_three, 5)
         yield tap.Send('key')
         yield tap.Send('key')
         yield tap.Cancel(task)
 
     tap.run(fn)
     assert a == 10
+
+# TODO:
+# - test join on something already done
+# - test receive with a predicate
+# - test multiple First on same task

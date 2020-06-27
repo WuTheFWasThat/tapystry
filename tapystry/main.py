@@ -27,16 +27,16 @@ class Call(Effect):
         self.kwargs = kwargs
 
 
-class Fork(Effect):
+class CallFork(Effect):
     def __init__(self, gen, *args, **kwargs):
         self.gen = gen
         self.args = args
         self.kwargs = kwargs
 
 
-class Join(Effect):
-    def __init__(self, strand):
-        self.strand = strand
+class First(Effect):
+    def __init__(self, strands):
+        self.strands = strands
 
 
 # TODO: does this really need to be an effect?  what's wrong with just exposing _canceled on Strand?
@@ -59,9 +59,10 @@ class Strand():
         self._it = gen(*args, **kwargs)
         self._done = False
         self._result = None
-        self.id = uuid4().hex
+        self.id = uuid4()
         self._canceled = False
         # self._error = None
+        self._children = []
 
     def send(self, value=None):
         assert not self._canceled
@@ -73,6 +74,12 @@ class Strand():
             self._result = e.value
             return dict(done=True)
 
+    def __hash__(self):
+        return self.id.int
+
+    def __str__(self):
+        return self.id.hex
+
     def is_done(self):
         return self._done
 
@@ -80,6 +87,11 @@ class Strand():
         if not self._done:
             raise TapystryError("Tried to get result on a Strand that was still running!")
         return self._result
+
+    def cancel(self):
+        for child in self._children:
+            child.cancel()
+        self._canceled = True
 
     def is_canceled(self):
         return self._canceled
@@ -92,11 +104,50 @@ class _QueueItem():
 
 
 def run(gen, args=(), kwargs=None):
-    # dict from string to waiting strands
+    # dict from string to waiting functions
     waiting = defaultdict(list)
-    q = queue.SimpleQueue()
+    # dict from strand to waiting key
+    hanging_strands = dict()
+    # q = queue.SimpleQueue()
+    q = queue.LifoQueue()
     initial_strand = Strand(gen, args, kwargs)
     q.put(_QueueItem(initial_strand))
+
+    def add_waiting_strand(key, strand):
+        assert strand not in hanging_strands
+        hanging_strands[strand] = key
+
+        def receive(val):
+            assert strand in hanging_strands
+            del hanging_strands[strand]
+            q.put(_QueueItem(strand, val))
+        waiting[key].append(receive)
+
+    def add_racing_strand(racing_strands, race_strand):
+        assert race_strand not in hanging_strands
+        hanging_strands[race_strand] = "race"
+
+        received = False
+        def receive_fn(i):
+            def receive(val):
+                nonlocal received
+                assert not received
+                received = True
+                for j, strand in enumerate(racing_strands):
+                    if j == i:
+                        assert strand.is_done()
+                    else:
+                        assert not strand.is_done()
+                        strand.cancel()
+                assert race_strand in hanging_strands
+                del hanging_strands[race_strand]
+                q.put(_QueueItem(race_strand, (i, val)))
+            return receive
+        for i, strand in enumerate(racing_strands):
+            if strand.is_done():
+                raise TapystryError(f"Race between effects that are already completed")
+            waiting["done." + strand.id.hex].append(receive_fn(i))
+
     while not q.empty():
         item = q.get()
         if item.strand.is_canceled():
@@ -106,11 +157,12 @@ def run(gen, args=(), kwargs=None):
         else:
             result = item.strand.send(item.value)
         if result['done']:
-            wait_key = "join." + item.strand.id
-            waiting_strands = waiting[wait_key]
+            value = item.strand.get_result()
+            wait_key = "done." + item.strand.id.hex
+            fns = waiting[wait_key]
             waiting[wait_key] = []
-            for strand in waiting_strands:
-                q.put(_QueueItem(strand, item.strand.get_result()))
+            for fn in fns:
+                fn(value)
             continue
         effect = result['effect']
 
@@ -119,39 +171,36 @@ def run(gen, args=(), kwargs=None):
 
         if isinstance(effect, Send):
             wait_key = "send." + effect.key
-            waiting_strands = waiting[wait_key]
+            fns = waiting[wait_key]
             waiting[wait_key] = []
-            for strand in waiting_strands:
-                q.put(_QueueItem(strand, effect.value))
+            # prioritize the triggered stuff over returning the current task
             q.put(_QueueItem(item.strand))
+            for fn in fns:
+                fn(effect.value)
         elif isinstance(effect, Receive):
-            wait_key = "send." + effect.key
-            waiting[wait_key].append(item.strand)
+            add_waiting_strand("send." + effect.key, item.strand)
         elif isinstance(effect, Call):
             strand = Strand(effect.gen, effect.args, effect.kwargs)
+            item.strand._children.append(strand)
             q.put(_QueueItem(strand))
-            wait_key = "join." + strand.id
-            waiting[wait_key].append(item.strand)
-        elif isinstance(effect, Fork):
+            add_waiting_strand("done." + strand.id.hex, item.strand)
+        elif isinstance(effect, CallFork):
             strand = Strand(effect.gen, effect.args, effect.kwargs)
-            q.put(_QueueItem(strand))
+            item.strand._children.append(strand)
+            # prioritize starting the forked task over returning the task
             q.put(_QueueItem(item.strand, strand))
-        elif isinstance(effect, Join):
-            if effect.strand.is_done():
-                q.put(_QueueItem(item.strand, effect.strand.get_result()))
-            else:
-                wait_key = "join." + effect.strand.id
-                waiting[wait_key].append(item.strand)
+            q.put(_QueueItem(strand))
+        elif isinstance(effect, First):
+            add_racing_strand(effect.strands, item.strand)
         elif isinstance(effect, Cancel):
-            effect.strand._canceled = True
+            effect.strand.cancel()
             q.put(_QueueItem(item.strand))
         else:
             raise TapystryError(f"Unhandled effect type {type(effect)}")
 
-    for k, vs in waiting.items():
-        for v in vs:
-            if not v.is_canceled():
-                raise TapystryError(f"Hanging strands detected waiting for {k}")
+    for strand, key in hanging_strands.items():
+        if not strand.is_canceled():
+            raise TapystryError(f"Hanging strands detected waiting for {key}")
 
     assert initial_strand.is_done()
     return initial_strand.get_result()

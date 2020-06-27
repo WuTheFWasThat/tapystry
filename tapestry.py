@@ -1,6 +1,7 @@
 import abc
 from collections import defaultdict
 import queue
+from uuid import uuid4
 
 
 class Effect(metaclass=abc.ABCMeta):
@@ -19,6 +20,18 @@ class Receive(Effect):
         self.key = key
 
 
+class Fork(Effect):
+    def __init__(self, gen, *args, **kwargs):
+        self.gen = gen
+        self.args = args
+        self.kwargs = kwargs
+
+
+class Join(Effect):
+    def __init__(self, strand):
+        self.strand = strand
+
+
 class TapestryError(Exception):
     pass
 
@@ -33,6 +46,7 @@ class Strand():
         self._it = gen(*args, **kwargs)
         self._done = False
         self._result = None
+        self.id = uuid4().hex
         # self._canceled = False
         # self._error = None
 
@@ -72,6 +86,11 @@ def run(gen, args=(), kwargs=None):
         else:
             result = item.strand.send(item.value)
         if result['done']:
+            wait_key = "join." + item.strand.id
+            waiting_strands = waiting[wait_key]
+            waiting[wait_key] = []
+            for strand in waiting_strands:
+                q.put(_QueueItem(strand, item.strand.get_result()))
             continue
         effect = result['effect']
 
@@ -79,13 +98,25 @@ def run(gen, args=(), kwargs=None):
             raise TapestryError(f"Strand yielded non-effect {type(effect)}")
 
         if isinstance(effect, Send):
-            waiting_strands = waiting[effect.key]
-            waiting[effect.key] = []
+            wait_key = "send." + effect.key
+            waiting_strands = waiting[wait_key]
+            waiting[wait_key] = []
             for strand in waiting_strands:
                 q.put(_QueueItem(strand, effect.value))
             q.put(_QueueItem(item.strand))
         elif isinstance(effect, Receive):
-            waiting[effect.key].append(item.strand)
+            wait_key = "send." + effect.key
+            waiting[wait_key].append(item.strand)
+        elif isinstance(effect, Fork):
+            strand = Strand(effect.gen, effect.args, effect.kwargs)
+            q.put(_QueueItem(strand))
+            q.put(_QueueItem(item.strand, strand))
+        elif isinstance(effect, Join):
+            if effect.strand.is_done():
+                q.put(_QueueItem(item.strand, effect.strand.get_result()))
+            else:
+                wait_key = "join." + effect.strand.id
+                waiting[wait_key].append(item.strand)
         else:
             raise TapestryError(f"Unhandled effect type {type(effect)}")
 

@@ -102,3 +102,25 @@ def test_call():
         return x
 
     assert tap.run(fn) == 10
+
+
+def test_cancel():
+    a = 0
+    def add_three(value):
+        nonlocal a
+        yield tap.Receive('key')
+        a += 5
+        yield tap.Receive('key')
+        a += 5
+        yield tap.Receive('key')
+        a += 5
+        return 10
+
+    def fn():
+        task = yield tap.Fork(add_three, 5)
+        yield tap.Send('key')
+        yield tap.Send('key')
+        yield tap.Cancel(task)
+
+    tap.run(fn)
+    assert a == 10

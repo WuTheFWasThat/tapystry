@@ -39,6 +39,12 @@ class Join(Effect):
         self.strand = strand
 
 
+# TODO: does this really need to be an effect?  what's wrong with just exposing _canceled on Strand?
+class Cancel(Effect):
+    def __init__(self, strand):
+        self.strand = strand
+
+
 class TapystryError(Exception):
     pass
 
@@ -54,10 +60,12 @@ class Strand():
         self._done = False
         self._result = None
         self.id = uuid4().hex
-        # self._canceled = False
+        self._canceled = False
         # self._error = None
 
     def send(self, value=None):
+        assert not self._canceled
+        assert not self._done
         try:
             return dict(done=False, effect=self._it.send(value))
         except StopIteration as e:
@@ -72,6 +80,9 @@ class Strand():
         if not self._done:
             raise TapystryError("Tried to get result on a Strand that was still running!")
         return self._result
+
+    def is_canceled(self):
+        return self._canceled
 
 
 class _QueueItem():
@@ -88,6 +99,8 @@ def run(gen, args=(), kwargs=None):
     q.put(_QueueItem(initial_strand))
     while not q.empty():
         item = q.get()
+        if item.strand.is_canceled():
+            continue
         if item.value == _noval:
             result = item.strand.send()
         else:
@@ -129,12 +142,16 @@ def run(gen, args=(), kwargs=None):
             else:
                 wait_key = "join." + effect.strand.id
                 waiting[wait_key].append(item.strand)
+        elif isinstance(effect, Cancel):
+            effect.strand._canceled = True
+            q.put(_QueueItem(item.strand))
         else:
             raise TapystryError(f"Unhandled effect type {type(effect)}")
 
-    for k, v in waiting.items():
-        if len(v):
-            raise TapystryError(f"Hanging strands detected waiting for {k}")
+    for k, vs in waiting.items():
+        for v in vs:
+            if not v.is_canceled():
+                raise TapystryError(f"Hanging strands detected waiting for {k}")
 
     assert initial_strand.is_done()
     return initial_strand.get_result()

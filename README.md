@@ -1,4 +1,4 @@
-# Tapestry
+# Tapystry
 
 This is a tiny library for handling effects.
 

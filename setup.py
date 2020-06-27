@@ -1,13 +1,13 @@
 from setuptools import setup
 
 setup(
-    name="tapestry",
-    py_modules=["tapestry"],
-    version="0.0.1",
+    name="tapystry",
+    packages=["tapystry"],
+    version="0.0.4",
     author="Jeffrey Wu",
     install_requires=[
     ],
-    url="https://github.com/wuthefwasthat/tapestry",
+    url="https://github.com/wuthefwasthat/tapystry",
     description="A redux-saga inspired effects library",
     python_requires='>=3.7',
 )

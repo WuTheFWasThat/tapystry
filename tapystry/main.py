@@ -32,7 +32,7 @@ class Join(Effect):
         self.strand = strand
 
 
-class TapestryError(Exception):
+class TapystryError(Exception):
     pass
 
 
@@ -63,7 +63,7 @@ class Strand():
 
     def get_result(self):
         if not self._done:
-            raise TapestryError("Tried to get result on a Strand that was still running!")
+            raise TapystryError("Tried to get result on a Strand that was still running!")
         return self._result
 
 
@@ -95,7 +95,7 @@ def run(gen, args=(), kwargs=None):
         effect = result['effect']
 
         if not isinstance(effect, Effect):
-            raise TapestryError(f"Strand yielded non-effect {type(effect)}")
+            raise TapystryError(f"Strand yielded non-effect {type(effect)}")
 
         if isinstance(effect, Send):
             wait_key = "send." + effect.key
@@ -118,11 +118,11 @@ def run(gen, args=(), kwargs=None):
                 wait_key = "join." + effect.strand.id
                 waiting[wait_key].append(item.strand)
         else:
-            raise TapestryError(f"Unhandled effect type {type(effect)}")
+            raise TapystryError(f"Unhandled effect type {type(effect)}")
 
     for k, v in waiting.items():
         if len(v):
-            raise TapestryError(f"Hanging strands detected waiting for {k}")
+            raise TapystryError(f"Hanging strands detected waiting for {k}")
 
     assert initial_strand.is_done()
     return initial_strand.get_result()

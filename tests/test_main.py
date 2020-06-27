@@ -1,6 +1,6 @@
 import pytest
 
-import tapestry as tap
+import tapystry as tap
 
 
 def test_simple():
@@ -45,5 +45,5 @@ def test_never_receive():
         value = yield tap.Join(recv_task)
         return value
 
-    with pytest.raises(tap.TapestryError):
+    with pytest.raises(tap.TapystryError):
         tap.run(fn)

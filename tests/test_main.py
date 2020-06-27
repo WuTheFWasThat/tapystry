@@ -45,5 +45,36 @@ def test_never_receive():
         value = yield tap.Join(recv_task)
         return value
 
-    with pytest.raises(tap.TapystryError):
+    with pytest.raises(tap.TapystryError) as x:
         tap.run(fn)
+    assert str(x.value).startswith("Hanging strands")
+
+
+def test_bad_yield():
+    def fn():
+        yield 3
+
+    with pytest.raises(tap.TapystryError) as x:
+        tap.run(fn)
+    assert str(x.value).startswith("Strand yielded non-effect")
+
+
+def test_immediate_return():
+    def fn():
+        if False:
+            yield
+        return 3
+
+    assert tap.run(fn) == 3
+
+
+def test_never_join():
+    def sender(value):
+        yield tap.Send('key', value)
+        yield tap.Send('key2', value)
+
+    def fn():
+        yield tap.Fork(sender, 5)
+        return
+
+    assert tap.run(fn) is None

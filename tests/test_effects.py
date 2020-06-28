@@ -9,7 +9,7 @@ def test_join():
         return value
 
     def fn():
-        t = yield tap.CallFork(ret, 5)
+        t = yield tap.CallFork(ret, (5,))
         results = yield tap.Join(t)
         return results
 
@@ -22,9 +22,9 @@ def test_join_dict():
         return value
 
     def fn():
-        t = yield tap.CallFork(ret, 5)
-        t2 = yield tap.CallFork(ret, 6)
-        t3 = yield tap.CallFork(ret, 7)
+        t = yield tap.CallFork(ret, (5,))
+        t2 = yield tap.CallFork(ret, (6,))
+        t3 = yield tap.CallFork(ret, (7,))
         results = yield tap.Join(dict(
             a=t,
             bs=[t2, t3],
@@ -44,8 +44,8 @@ def test_fork():
 
     def fn():
         t = (yield tap.Fork([
-            tap.Call(ret, 5),
-            tap.Call(ret, 6),
+            tap.Call(ret, (5,)),
+            tap.Call(ret, (6,)),
         ]))
         results = yield tap.Join(t)
         return results
@@ -128,11 +128,13 @@ def test_subscribe():
 
         for i in range(4):
             yield tap.Send("key", i)
+        yield tap.Sleep(0)
         assert a == 1 + 3
         assert b == 1
         yield tap.Send("unlock")
         for i in range(4):
             yield tap.Send("key", i)
+        yield tap.Sleep(0)
         assert a == (1 + 3) * 2
         assert b == 2
 
@@ -141,6 +143,7 @@ def test_subscribe():
         yield tap.Send("unlock")
         for i in range(4):
             yield tap.Send("key", i)
+        yield tap.Sleep(0)
         assert a == (1 + 3) * 2
         assert b == 2
 
@@ -150,9 +153,9 @@ def test_subscribe():
 def test_subscribes_all():
     a = 0
 
-    def recv_send():
+    def recv_send(x):
         yield tap.Receive("key")
-        yield tap.Send("key")
+        yield tap.Send("key", x)
 
     def increment(x):
         nonlocal a
@@ -160,16 +163,16 @@ def test_subscribes_all():
         yield tap.Receive("unlock")
 
     def fn():
-        yield tap.CallFork(recv_send)
+        yield tap.CallFork(recv_send, ("a",))
         ta = yield tap.Subscribe("key", increment)
-        yield tap.CallFork(recv_send)
+        yield tap.CallFork(recv_send, ("b",))
 
         yield tap.Sleep(0)
-        yield tap.Send("key")
+        yield tap.Send("key", "main")
         yield tap.Sleep(0)
         assert a == 3
         yield tap.Sleep(0)
-        yield tap.Send("key")
+        yield tap.Send("key", "main2")
         yield tap.Sleep(0)
         assert a == 4
         ta.cancel()

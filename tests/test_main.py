@@ -23,7 +23,7 @@ def test_receive():
     def fn():
         recv_strand = yield tap.CallFork(receiver)
         # even though this is forked, it doesn't end up hanging
-        yield tap.CallFork(sender, 5)
+        yield tap.CallFork(sender, (5,))
         value = yield tap.Join(recv_strand)
         # join again should give the same thing, it's already done
         value1 = yield tap.Join(recv_strand)
@@ -33,7 +33,7 @@ def test_receive():
     assert tap.run(fn) == 5
 
 
-def test_never_receive():
+def test_send_receive_order():
     def sender(value):
         yield tap.Send('key', value)
 
@@ -42,9 +42,28 @@ def test_never_receive():
         return value
 
     def fn():
-        # fork in wrong order!
-        send_strand = yield tap.CallFork(sender, 5)
+        # fork in apparently wrong order!
+        send_strand = yield tap.CallFork(sender, (5,))
         recv_strand = yield tap.CallFork(receiver)
+        yield tap.Join(send_strand)
+        value = yield tap.Join(recv_strand)
+        return value
+
+    assert tap.run(fn) == 5
+
+
+
+def test_never_receive():
+    def sender(value):
+        yield tap.Send('key', value)
+
+    def receiver():
+        value = yield tap.Receive('key2')
+        return value
+
+    def fn():
+        recv_strand = yield tap.CallFork(receiver)
+        send_strand = yield tap.CallFork(sender, (5,))
         yield tap.Join(send_strand)
         value = yield tap.Join(recv_strand)
         return value
@@ -78,7 +97,7 @@ def test_never_join():
         yield tap.Send('key2', value)
 
     def fn():
-        yield tap.CallFork(sender, 5)
+        yield tap.CallFork(sender, (5,))
         return
 
     assert tap.run(fn) is None
@@ -102,7 +121,7 @@ def test_call():
         return 10
 
     def fn():
-        x = yield tap.Call(random, 5)
+        x = yield tap.Call(random, (5,))
         return x
 
     assert tap.run(fn) == 10
@@ -113,11 +132,11 @@ def test_call_trivial():
         return 10
 
     def fn():
-        x = yield tap.Call(random, 5)
+        x = yield tap.Call(random, (5,))
         return x
 
     def fork_fn():
-        strand = yield tap.CallFork(random, 5)
+        strand = yield tap.CallFork(random, (5,))
         x = yield tap.Join(strand)
         return x
 
@@ -139,7 +158,7 @@ def test_cancel():
         return 10
 
     def fn():
-        strand = yield tap.CallFork(add_three, 5)
+        strand = yield tap.CallFork(add_three, (5,))
         yield tap.Send('key')
         yield tap.Send('key')
         yield tap.Cancel(strand)
@@ -157,16 +176,16 @@ def test_multifirst():
         return value
 
     def fn():
-        strand_1 = yield tap.CallFork(receiver, 1)
-        strand_2 = yield tap.CallFork(receiver, 2)
-        strand_3 = yield tap.CallFork(receiver, 3)
+        strand_1 = yield tap.CallFork(receiver, (1,))
+        strand_2 = yield tap.CallFork(receiver, (2,))
+        strand_3 = yield tap.CallFork(receiver, (3,))
         results = yield tap.Fork([
             tap.First([strand_1, strand_2, strand_3]),
             tap.First([strand_2, strand_1]),
         ])
-        yield tap.Call(sender, 5)
-        yield tap.Call(sender, 3)
-        yield tap.Call(sender, 1)
+        yield tap.Call(sender, (5,))
+        yield tap.Call(sender, (3,))
+        yield tap.Call(sender, (1,))
         value = yield tap.Join(results)
         return value
 
@@ -185,17 +204,18 @@ def test_multifirst_again():
         return value
 
     def fn():
-        strand_1 = yield tap.CallFork(receiver, 1)
-        strand_2 = yield tap.CallFork(receiver, 2)
-        strand_3 = yield tap.CallFork(receiver, 3)
+        strand_1 = yield tap.CallFork(receiver, (1,))
+        strand_2 = yield tap.CallFork(receiver, (2,))
+        strand_3 = yield tap.CallFork(receiver, (3,))
         results = yield tap.Fork([
-            tap.First([strand_1, strand_2]),
-            tap.First([strand_2, strand_3]),
+            tap.First([strand_1, strand_2], name="1v2"),
+            tap.First([strand_2, strand_3], name="2v3"),
         ])
-        yield tap.Call(sender, 5)
-        yield tap.Call(sender, 1)
-        yield tap.Call(sender, 3)
-        value = yield tap.Join(results)
+        yield tap.Call(sender, (5,))
+        yield tap.Call(sender, (1,))
+        yield tap.Call(sender, (3,))
+        value = yield tap.Join(results, name="joinfork")
+        # yield tap.Join([strand_1, strand_2, strand_3], name="joinstrands")
         return value
 
     assert tap.run(fn) == [

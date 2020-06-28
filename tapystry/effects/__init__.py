@@ -1,7 +1,7 @@
 from tapystry import Effect, Strand, Call, Send, Receive, CallFork, First
 
 
-def Sequence(effects):
+def Sequence(effects, name=None):
     """Do each of the effects.
     Effects can be a (nested) list/dict structure
     """
@@ -13,7 +13,7 @@ def Sequence(effects):
             results = []
             for effect in effects:
                 if isinstance(effect, (list, dict)):
-                    result = yield Sequence(effect)
+                    result = yield Sequence(effect, name)
                 else:
                     result = yield effect
                 results.append(result)
@@ -22,15 +22,15 @@ def Sequence(effects):
             results = dict()
             for k, effect in effects.items():
                 if isinstance(effect, (list, dict)):
-                    result = yield Sequence(effect)
+                    result = yield Sequence(effect, name)
                 else:
                     result = yield effect
                 results[k] = result
         return results
-    return Call(sequence)
+    return Call(sequence, name=name)
 
 
-def Join(strands):
+def Join(strands, name=None):
     """
     Returns the result of a strand (or nested structure of strands)
     """
@@ -38,15 +38,15 @@ def Join(strands):
         if isinstance(strands, Strand):
             if strands.is_done():
                 return strands.get_result()
-            key, val = yield First([strands])
+            key, val = yield First([strands], name=f"Join({name})")
             assert key == 0
             return val
         elif isinstance(strands, list):
-            vals = yield Sequence([Join(v) for v in strands])
+            vals = yield Sequence([Join(v, name=name) for v in strands])
             return vals
         else:
             assert isinstance(strands, dict), strands
-            vals = yield Sequence({k: Join(v) for k, v in strands.items()})
+            vals = yield Sequence({k: Join(v, name=name) for k, v in strands.items()})
             return vals
 
     return Call(join)
@@ -63,7 +63,7 @@ def Fork(effects):
 
     def fork_effects(effects):
         if isinstance(effects, Effect):
-            return CallFork(call_fork, effects)
+            return CallFork(call_fork, (effects,))
         elif isinstance(effects, list):
             return [fork_effects(v) for v in effects]
         else:
@@ -73,7 +73,7 @@ def Fork(effects):
     return Sequence(fork_effects(effects))
 
 
-def Race(effects):
+def Race(effects, name=None):
     """Wait for the first of the effects to finish.
     Returns a tuple with the key of the winning item, and its value
     """
@@ -90,7 +90,7 @@ def Race(effects):
             if strand.is_done():
                 return key, strand.get_result()
             strands.append(strand)
-        i, result = yield First(strands)
+        i, result = yield First(strands, name="Race({name})")
         return keys[i], result
     return Call(race)
 
@@ -104,8 +104,8 @@ def Subscribe(message_key, fn, predicate=None, latest_only=False):
         while True:
             msg = yield Receive(message_key, predicate=predicate)
             if latest_only:
-                yield Call(fn, msg)
+                yield Call(fn, (msg,))
             else:
-                yield CallFork(fn, msg)
+                yield CallFork(fn, (msg,), immediate=False)
 
     return CallFork(subscribe)

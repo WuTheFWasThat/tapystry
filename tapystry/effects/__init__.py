@@ -93,3 +93,19 @@ def Race(effects):
         i, result = yield First(strands)
         return keys[i], result
     return Call(race)
+
+
+def Subscribe(message_key, fn, predicate=None, latest_only=False):
+    """
+    Upon receiving any message, runs the specified function on the value
+    Returns the strand running the subscription
+    """
+    def subscribe():
+        while True:
+            msg = yield Receive(message_key, predicate=predicate)
+            if latest_only:
+                yield Call(fn, msg)
+            else:
+                yield CallFork(fn, msg)
+
+    return CallFork(subscribe)

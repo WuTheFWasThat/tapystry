@@ -2,6 +2,7 @@ import abc
 from collections import defaultdict
 import queue
 from uuid import uuid4
+import types
 
 
 class Effect(metaclass=abc.ABCMeta):
@@ -16,9 +17,9 @@ class Send(Effect):
 
 
 class Receive(Effect):
-    def __init__(self, key, fn=None):
+    def __init__(self, key, predicate=None):
         self.key = key
-        self.fn = fn
+        self.predicate = predicate
 
 
 class Call(Effect):
@@ -64,6 +65,9 @@ class Strand():
         self._canceled = False
         # self._error = None
         self._children = []
+        if not isinstance(self._it, types.GeneratorType):
+            self._result = self._it
+            self._done = True
 
     def send(self, value=None):
         assert not self._canceled
@@ -112,6 +116,9 @@ def run(gen, args=(), kwargs=None):
     # q = queue.SimpleQueue()
     q = queue.LifoQueue()
     initial_strand = Strand(gen, args, kwargs)
+    if initial_strand.is_done():
+        # wasn't even a generator
+        return initial_strand.get_result()
     q.put(_QueueItem(initial_strand))
 
     def add_waiting_strand(key, strand, fn=None):
@@ -180,18 +187,24 @@ def run(gen, args=(), kwargs=None):
             q.put(_QueueItem(item.strand))
             resolve_waiting("send." + effect.key, effect.value)
         elif isinstance(effect, Receive):
-            add_waiting_strand("send." + effect.key, item.strand, effect.fn)
+            add_waiting_strand("send." + effect.key, item.strand, effect.predicate)
         elif isinstance(effect, Call):
             strand = Strand(effect.gen, effect.args, effect.kwargs)
             item.strand._children.append(strand)
-            q.put(_QueueItem(strand))
-            add_waiting_strand("done." + strand.id.hex, item.strand)
+            if strand.is_done():
+                # wasn't even a generator
+                q.put(_QueueItem(item.strand, strand.get_result()))
+            else:
+                q.put(_QueueItem(strand))
+                add_waiting_strand("done." + strand.id.hex, item.strand)
         elif isinstance(effect, CallFork):
             strand = Strand(effect.gen, effect.args, effect.kwargs)
             item.strand._children.append(strand)
             # prioritize starting the forked strand over returning the strand
             q.put(_QueueItem(item.strand, strand))
-            q.put(_QueueItem(strand))
+            if not strand.is_done():
+                # otherwise wasn't even a generator
+                q.put(_QueueItem(strand))
         elif isinstance(effect, First):
             add_racing_strand(effect.strands, item.strand)
         elif isinstance(effect, Cancel):

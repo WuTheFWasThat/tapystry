@@ -77,5 +77,71 @@ def test_race():
     assert tap.run(fn) == (1, 2)
 
 
-# TODO:
-# test nested cancel
+def test_nested_cancel():
+    a = 0
+    b = 0
+    def recv_inner():
+        nonlocal a
+        while True:
+            yield tap.Receive('key')
+            yield tap.Receive('key')
+            a += 1
+
+    def recv_outer():
+        nonlocal b
+        yield tap.CallFork(recv_inner)
+        while True:
+            yield tap.Receive('key')
+            b += 1
+
+
+    def fn():
+        t = yield tap.CallFork(recv_outer)
+        for _ in range(4):
+            yield tap.Send("key")
+        # this should also cancel recv_inner
+        t.cancel()
+        for _ in range(4):
+            yield tap.Send("key")
+        return a, b
+
+    assert tap.run(fn) == (2, 4)
+
+
+def test_subscribe():
+    a = 0
+    b = 0
+
+    def recv_all(v):
+        nonlocal a
+        a += v
+        yield tap.Receive("unlock")
+
+    def recv_latest(v):
+        nonlocal b
+        b += v
+        yield tap.Receive("unlock")
+
+    def fn():
+        ta = yield tap.Subscribe("key", recv_all, predicate=lambda x: x % 2 == 1)
+        tb = yield tap.Subscribe("key", recv_latest, predicate=lambda x: x % 2 == 1, latest_only=True)
+
+        for i in range(4):
+            yield tap.Send("key", i)
+        assert a == 1 + 3
+        assert b == 1
+        yield tap.Send("unlock")
+        for i in range(4):
+            yield tap.Send("key", i)
+        assert a == (1 + 3) * 2
+        assert b == 2
+
+        ta.cancel()
+        tb.cancel()
+        yield tap.Send("unlock")
+        for i in range(4):
+            yield tap.Send("key", i)
+        assert a == (1 + 3) * 2
+        assert b == 2
+
+    tap.run(fn)

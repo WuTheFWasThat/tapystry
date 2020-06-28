@@ -21,7 +21,8 @@ def test_receive():
 
     def fn():
         recv_strand = yield tap.CallFork(receiver)
-        send_strand = yield tap.CallFork(sender, 5)
+        # even though this is forked, it doesn't end up hanging
+        yield tap.CallFork(sender, 5)
         value = yield tap.Join(recv_strand)
         # join again should give the same thing, it's already done
         value1 = yield tap.Join(recv_strand)
@@ -104,6 +105,24 @@ def test_call():
         return x
 
     assert tap.run(fn) == 10
+
+
+def test_call_trivial():
+    def random(value):
+        return 10
+
+    def fn():
+        x = yield tap.Call(random, 5)
+        return x
+
+    def fork_fn():
+        task = yield tap.CallFork(random, 5)
+        x = yield tap.Join(task)
+        return x
+
+    assert tap.run(fn) == 10
+    assert tap.run(fork_fn) == 10
+    assert tap.run(random, args=(5,)) == 10
 
 
 def test_cancel():

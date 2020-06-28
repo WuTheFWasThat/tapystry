@@ -1,3 +1,4 @@
+import time
 import pytest
 
 import tapystry as tap
@@ -219,5 +220,17 @@ def test_yield_from():
         v2 = yield from fn2(4)
         assert v1 == 1
         assert v2 == 2
+
+    tap.run(fn)
+
+
+def test_sleep():
+    def fn():
+        t = time.time()
+        yield tap.Sleep(0.01)
+        assert time.time() - t > 0.01
+        t = time.time()
+        yield tap.Sleep(0)
+        assert time.time() - t < 0.01
 
     tap.run(fn)

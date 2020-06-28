@@ -1,8 +1,8 @@
 import abc
-from collections import defaultdict
-import queue
+from collections import defaultdict, deque
 from uuid import uuid4
 import types
+import time
 
 
 class Effect(metaclass=abc.ABCMeta):
@@ -45,6 +45,11 @@ class First(Effect):
 class Cancel(Effect):
     def __init__(self, strand):
         self.strand = strand
+
+
+class Sleep(Effect):
+    def __init__(self, t):
+        self.t = t
 
 
 class TapystryError(Exception):
@@ -103,9 +108,10 @@ class Strand():
 
 
 class _QueueItem():
-    def __init__(self, strand, value=_noval):
+    def __init__(self, strand, value=_noval, wake_time=None):
         self.strand = strand
         self.value = value
+        self.wake_time = wake_time
 
 
 def run(gen, args=(), kwargs=None):
@@ -113,13 +119,12 @@ def run(gen, args=(), kwargs=None):
     waiting = defaultdict(list)
     # dict from strand to waiting key
     hanging_strands = dict()
-    # q = queue.SimpleQueue()
-    q = queue.LifoQueue()
+    q = deque()
     initial_strand = Strand(gen, args, kwargs)
     if initial_strand.is_done():
         # wasn't even a generator
         return initial_strand.get_result()
-    q.put(_QueueItem(initial_strand))
+    q.append(_QueueItem(initial_strand))
 
     def add_waiting_strand(key, strand, fn=None):
         assert strand not in hanging_strands
@@ -130,7 +135,7 @@ def run(gen, args=(), kwargs=None):
             if fn is not None and not fn(val):
                 return False
             del hanging_strands[strand]
-            q.put(_QueueItem(strand, val))
+            q.append(_QueueItem(strand, val))
             return True
         waiting[key].append(receive)
 
@@ -153,7 +158,7 @@ def run(gen, args=(), kwargs=None):
                         strand.cancel()
                 assert race_strand in hanging_strands
                 del hanging_strands[race_strand]
-                q.put(_QueueItem(race_strand, (i, val)))
+                q.append(_QueueItem(race_strand, (i, val)))
             return receive
         for i, strand in enumerate(racing_strands):
             if strand.is_done():
@@ -166,9 +171,12 @@ def run(gen, args=(), kwargs=None):
         waiting[wait_key] = [fn for fn in fns if not fn(value)]
 
 
-    while not q.empty():
-        item = q.get()
+    while len(q):
+        item = q.pop()
         if item.strand.is_canceled():
+            continue
+        if item.wake_time is not None and item.wake_time > time.time():
+            q.appendleft(item)
             continue
         if item.value == _noval:
             result = item.strand.send()
@@ -184,7 +192,7 @@ def run(gen, args=(), kwargs=None):
 
         if isinstance(effect, Send):
             # prioritize the triggered stuff over returning the current strand
-            q.put(_QueueItem(item.strand))
+            q.append(_QueueItem(item.strand))
             resolve_waiting("send." + effect.key, effect.value)
         elif isinstance(effect, Receive):
             add_waiting_strand("send." + effect.key, item.strand, effect.predicate)
@@ -193,23 +201,26 @@ def run(gen, args=(), kwargs=None):
             item.strand._children.append(strand)
             if strand.is_done():
                 # wasn't even a generator
-                q.put(_QueueItem(item.strand, strand.get_result()))
+                q.append(_QueueItem(item.strand, strand.get_result()))
             else:
-                q.put(_QueueItem(strand))
+                q.append(_QueueItem(strand))
                 add_waiting_strand("done." + strand.id.hex, item.strand)
         elif isinstance(effect, CallFork):
             strand = Strand(effect.gen, effect.args, effect.kwargs)
             item.strand._children.append(strand)
             # prioritize starting the forked strand over returning the strand
-            q.put(_QueueItem(item.strand, strand))
+            q.append(_QueueItem(item.strand, strand))
             if not strand.is_done():
                 # otherwise wasn't even a generator
-                q.put(_QueueItem(strand))
+                q.append(_QueueItem(strand))
         elif isinstance(effect, First):
             add_racing_strand(effect.strands, item.strand)
         elif isinstance(effect, Cancel):
             effect.strand.cancel()
-            q.put(_QueueItem(item.strand))
+            q.append(_QueueItem(item.strand))
+        elif isinstance(effect, Sleep):
+            wake_time = time.time() + effect.t
+            q.appendleft(_QueueItem(item.strand, wake_time=wake_time))
         else:
             raise TapystryError(f"Unhandled effect type {type(effect)}")
 

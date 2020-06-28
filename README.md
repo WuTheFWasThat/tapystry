@@ -1,6 +1,6 @@
 # Tapystry
 
-This is a tiny library for handling effects.
+This is a small library for handling effects, inspired by [redux-saga](https://www.github.com/redux-saga/redux-saga).
 
 ## Installation
 

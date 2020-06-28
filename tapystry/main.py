@@ -16,8 +16,9 @@ class Send(Effect):
 
 
 class Receive(Effect):
-    def __init__(self, key):
+    def __init__(self, key, fn=None):
         self.key = key
+        self.fn = fn
 
 
 class Call(Effect):
@@ -113,14 +114,17 @@ def run(gen, args=(), kwargs=None):
     initial_strand = Strand(gen, args, kwargs)
     q.put(_QueueItem(initial_strand))
 
-    def add_waiting_strand(key, strand):
+    def add_waiting_strand(key, strand, fn=None):
         assert strand not in hanging_strands
         hanging_strands[strand] = key
 
         def receive(val):
             assert strand in hanging_strands
+            if fn is not None and not fn(val):
+                return False
             del hanging_strands[strand]
             q.put(_QueueItem(strand, val))
+            return True
         waiting[key].append(receive)
 
     def add_racing_strand(racing_strands, race_strand):
@@ -128,6 +132,7 @@ def run(gen, args=(), kwargs=None):
         hanging_strands[race_strand] = "race"
 
         received = False
+
         def receive_fn(i):
             def receive(val):
                 nonlocal received
@@ -148,6 +153,12 @@ def run(gen, args=(), kwargs=None):
                 raise TapystryError(f"Race between effects that are already completed")
             waiting["done." + strand.id.hex].append(receive_fn(i))
 
+    def resolve_waiting(wait_key, value):
+        fns = waiting[wait_key]
+        # clear first in case it mutates
+        waiting[wait_key] = [fn for fn in fns if not fn(value)]
+
+
     while not q.empty():
         item = q.get()
         if item.strand.is_canceled():
@@ -157,12 +168,7 @@ def run(gen, args=(), kwargs=None):
         else:
             result = item.strand.send(item.value)
         if result['done']:
-            value = item.strand.get_result()
-            wait_key = "done." + item.strand.id.hex
-            fns = waiting[wait_key]
-            waiting[wait_key] = []
-            for fn in fns:
-                fn(value)
+            resolve_waiting("done." + item.strand.id.hex, item.strand.get_result())
             continue
         effect = result['effect']
 
@@ -170,15 +176,11 @@ def run(gen, args=(), kwargs=None):
             raise TapystryError(f"Strand yielded non-effect {type(effect)}")
 
         if isinstance(effect, Send):
-            wait_key = "send." + effect.key
-            fns = waiting[wait_key]
-            waiting[wait_key] = []
             # prioritize the triggered stuff over returning the current task
             q.put(_QueueItem(item.strand))
-            for fn in fns:
-                fn(effect.value)
+            resolve_waiting("send." + effect.key, effect.value)
         elif isinstance(effect, Receive):
-            add_waiting_strand("send." + effect.key, item.strand)
+            add_waiting_strand("send." + effect.key, item.strand, effect.fn)
         elif isinstance(effect, Call):
             strand = Strand(effect.gen, effect.args, effect.kwargs)
             item.strand._children.append(strand)

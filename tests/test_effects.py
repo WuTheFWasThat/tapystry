@@ -16,13 +16,34 @@ def test_join():
     assert tap.run(fn) == 5
 
 
-def test_parallel():
+def test_join_dict():
     def ret(value):
         yield tap.Send('key', value)
         return value
 
     def fn():
-        t = (yield tap.Parallel([
+        t = yield tap.CallFork(ret, 5)
+        t2 = yield tap.CallFork(ret, 6)
+        t3 = yield tap.CallFork(ret, 7)
+        results = yield tap.Join(dict(
+            a=t,
+            bs=[t2, t3],
+        ))
+        return results
+
+    assert tap.run(fn) == dict(
+        a=5,
+        bs=[6, 7]
+    )
+
+
+def test_fork():
+    def ret(value):
+        yield tap.Send('key', value)
+        return value
+
+    def fn():
+        t = (yield tap.Fork([
             tap.Call(ret, 5),
             tap.Call(ret, 6),
         ]))
@@ -54,3 +75,7 @@ def test_race():
         return results
 
     assert tap.run(fn) == (1, 2)
+
+
+# TODO:
+# test nested cancel

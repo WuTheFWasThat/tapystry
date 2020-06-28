@@ -24,6 +24,9 @@ def test_receive():
         send_task = yield tap.CallFork(sender, 5)
         yield tap.Join(send_task)
         value = yield tap.Join(recv_task)
+        # join again should give the same thing, it's already done
+        value1 = yield tap.Join(recv_task)
+        assert value1 == value
         return value
 
     assert tap.run(fn) == 5
@@ -125,7 +128,58 @@ def test_cancel():
     tap.run(fn)
     assert a == 10
 
-# TODO:
-# - test join on something already done
-# - test receive with a predicate
-# - test multiple First on same task
+
+def test_multifirst():
+    def sender(value):
+        yield tap.Send('key', value)
+
+    def receiver(wait_value):
+        value = yield tap.Receive('key', lambda x: x == wait_value)
+        return value
+
+    def fn():
+        task_1 = yield tap.CallFork(receiver, 1)
+        task_2 = yield tap.CallFork(receiver, 2)
+        task_3 = yield tap.CallFork(receiver, 3)
+        results = yield tap.Fork([
+            tap.First([task_1, task_2, task_3]),
+            tap.First([task_2, task_1]),
+        ])
+        yield tap.Call(sender, 5)
+        yield tap.Call(sender, 3)
+        yield tap.Call(sender, 1)
+        value = yield tap.Join(results)
+        return value
+
+    # the first race resolves first, thus cancelling tasks 1 and 2, preventing the second from ever finishing
+    with pytest.raises(tap.TapystryError) as x:
+        tap.run(fn)
+    assert str(x.value).startswith("Hanging strands")
+
+
+def test_multifirst_again():
+    def sender(value):
+        yield tap.Send('key', value)
+
+    def receiver(wait_value):
+        value = yield tap.Receive('key', lambda x: x == wait_value)
+        return value
+
+    def fn():
+        task_1 = yield tap.CallFork(receiver, 1)
+        task_2 = yield tap.CallFork(receiver, 2)
+        task_3 = yield tap.CallFork(receiver, 3)
+        results = yield tap.Fork([
+            tap.First([task_1, task_2]),
+            tap.First([task_2, task_3]),
+        ])
+        yield tap.Call(sender, 5)
+        yield tap.Call(sender, 1)
+        yield tap.Call(sender, 3)
+        value = yield tap.Join(results)
+        return value
+
+    assert tap.run(fn) == [
+        (0, 1),
+        (1, 3),
+    ]

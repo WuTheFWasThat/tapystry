@@ -80,6 +80,7 @@ def test_race():
 def test_nested_cancel():
     a = 0
     b = 0
+
     def recv_inner():
         nonlocal a
         while True:
@@ -93,7 +94,6 @@ def test_nested_cancel():
         while True:
             yield tap.Receive('key')
             b += 1
-
 
     def fn():
         t = yield tap.CallFork(recv_outer)
@@ -153,19 +153,19 @@ def test_subscribe():
 def test_subscribes_all():
     a = 0
 
-    def recv_send(x):
+    def recv_send():
         yield tap.Receive("key")
-        yield tap.Send("key", x)
+        yield tap.Send("key")
 
-    def increment(x):
+    def increment(_x):
         nonlocal a
         a += 1
         yield tap.Receive("unlock")
 
     def fn():
-        yield tap.CallFork(recv_send, ("a",))
+        yield tap.CallFork(recv_send)
         ta = yield tap.Subscribe("key", increment)
-        yield tap.CallFork(recv_send, ("b",))
+        yield tap.CallFork(recv_send)
 
         yield tap.Sleep(0)
         yield tap.Send("key", "main")

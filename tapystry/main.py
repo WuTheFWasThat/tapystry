@@ -11,15 +11,27 @@ class Effect(metaclass=abc.ABCMeta):
 
 
 class Send(Effect):
-    def __init__(self, key, value=None):
+    def __init__(self, key, value=None, name=None):
         self.key = key
         self.value = value
+        if name is None:
+            name = key
+        self.name = name
+
+    def __str__(self):
+        return f"Send({self.name})"
 
 
 class Receive(Effect):
-    def __init__(self, key, predicate=None):
+    def __init__(self, key, predicate=None, name=None):
         self.key = key
         self.predicate = predicate
+        if name is None:
+            name = key
+        self.name = name
+
+    def __str__(self):
+        return f"Receive({self.name})"
 
 
 class Call(Effect):
@@ -30,6 +42,9 @@ class Call(Effect):
         if name is None:
             name = gen.__name__
         self.name = name
+
+    def __str__(self):
+        return f"Call({self.name})"
 
 
 class CallFork(Effect):
@@ -42,29 +57,43 @@ class CallFork(Effect):
             name = gen.__name__
         self.name = name
 
+    def __str__(self):
+        return f"CallFork({self.name})"
+
 
 class First(Effect):
     """NOTE: use of this can be dangerous, as it cancels losers"""
     def __init__(self, strands, name=None):
-        self.name = name
         self.strands = strands
+        if name is None:
+            name = ", ".join([str(x) for x in self.strands])
+        self.name = name
 
     def __str__(self):
-        if self.name is None:
-            return "Race"
-        else:
-            return self.name
+        return f"Race({self.name})"
 
 
 # TODO: does this really need to be an effect?  what's wrong with just exposing _canceled on Strand?
 class Cancel(Effect):
-    def __init__(self, strand):
+    def __init__(self, strand, name=None):
         self.strand = strand
+        if name is None:
+            name = str(self.strand)
+        self.name = name
+
+    def __str__(self):
+        return f"Cancel({self.name})"
 
 
 class Sleep(Effect):
-    def __init__(self, t):
+    def __init__(self, t, name=None):
         self.t = t
+        if name is None:
+            name = str(t)
+        self.name = name
+
+    def __str__(self):
+        return f"Sleep({self.name})"
 
 
 class TapystryError(Exception):

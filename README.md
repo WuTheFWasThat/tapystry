@@ -15,19 +15,40 @@ import tapystry as tap
 
 def sender(value):
     yield tap.Send('key', value)
+    return "sent"
 
 def incrementer():
-    value = yield tap.Receive('key')
-    return value + 1
+    value = 0
+    while True:
+        winner, received_val = yield tap.Race([
+            tap.Receive('key'),
+            tap.Receive('break'),
+        ])
+        if winner == 1:
+            break
+        else:
+            value += received_val
+    return value
 
 def fn():
+    # fork off a strand that increments
     recv_strand = yield tap.CallFork(incrementer)
-    send_strand = yield tap.Call(sender, 5)
+    # send a value to add
+    sent = yield tap.Call(sender, (5,))
+    assert sent == "sent"
+    # equivalent syntax using yield from
+    sent = yield from sender(8)
+    assert sent == "sent"
+    # forked process is not yet done
+    assert not recv_strand.is_done()
+    yield tap.Send("break")
+    # this value won't get received
+    sent = yield tap.Call(sender, (1,))
+    assert sent == "sent"
     value = yield tap.Join(recv_strand)
-    assert value == 6
-    return dict(result=value)
+    return value
 
-assert tap.run(fn) == dict(result=6)
+assert tap.run(fn) == 13
 ```
 
 ### What's the point?

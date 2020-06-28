@@ -70,6 +70,7 @@ class Strand():
         self._canceled = False
         # self._error = None
         self._children = []
+        # TODO: also preserve ancestry, for nicer error messages?
         if not isinstance(self._it, types.GeneratorType):
             self._result = self._it
             self._done = True
@@ -118,6 +119,7 @@ def run(gen, args=(), kwargs=None):
     # dict from string to waiting functions
     waiting = defaultdict(list)
     # dict from strand to waiting key
+    # TODO: gc hanging strands
     hanging_strands = dict()
     q = deque()
     initial_strand = Strand(gen, args, kwargs)

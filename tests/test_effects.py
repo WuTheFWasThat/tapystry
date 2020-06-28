@@ -145,3 +145,33 @@ def test_subscribe():
         assert b == 2
 
     tap.run(fn)
+
+
+def test_subscribes_all():
+    a = 0
+
+    def recv_send():
+        yield tap.Receive("key")
+        yield tap.Send("key")
+
+    def increment(x):
+        nonlocal a
+        a += 1
+        yield tap.Receive("unlock")
+
+    def fn():
+        yield tap.CallFork(recv_send)
+        ta = yield tap.Subscribe("key", increment)
+        yield tap.CallFork(recv_send)
+
+        yield tap.Sleep(0)
+        yield tap.Send("key")
+        yield tap.Sleep(0)
+        assert a == 3
+        yield tap.Sleep(0)
+        yield tap.Send("key")
+        yield tap.Sleep(0)
+        assert a == 4
+        ta.cancel()
+
+    tap.run(fn)

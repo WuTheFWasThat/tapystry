@@ -116,8 +116,8 @@ def test_call_trivial():
         return x
 
     def fork_fn():
-        task = yield tap.CallFork(random, 5)
-        x = yield tap.Join(task)
+        strand = yield tap.CallFork(random, 5)
+        x = yield tap.Join(strand)
         return x
 
     assert tap.run(fn) == 10
@@ -201,3 +201,23 @@ def test_multifirst_again():
         (0, 1),
         (1, 3),
     ]
+
+
+def test_yield_from():
+    def fn1(value):
+        yield tap.Send('key1', value)
+        yield tap.Send('key2', value)
+        return 1
+
+    def fn2(value):
+        yield tap.Send('key3', value)
+        yield tap.Send('key4', value)
+        return 2
+
+    def fn():
+        v1 = yield from fn1(3)
+        v2 = yield from fn2(4)
+        assert v1 == 1
+        assert v2 == 2
+
+    tap.run(fn)

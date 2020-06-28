@@ -90,7 +90,7 @@ def Race(effects, name=None):
             if strand.is_done():
                 return key, strand.get_result()
             strands.append(strand)
-        i, result = yield First(strands, name="Race({name})")
+        i, result = yield First(strands, name=f"Race({name})")
         return keys[i], result
     return Call(race)
 

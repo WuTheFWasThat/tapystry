@@ -224,6 +224,64 @@ def test_multifirst_again():
     ]
 
 
+def test_multifirst_canceled():
+    def sender(value):
+        yield tap.Send('key', value)
+
+    def receiver(wait_value):
+        value = yield tap.Receive('key', lambda x: x == wait_value)
+        return value
+
+    def fn():
+        strand_1 = yield tap.CallFork(receiver, (1,))
+        strand_2 = yield tap.CallFork(receiver, (2,))
+        strand_3 = yield tap.CallFork(receiver, (3,))
+        results = yield tap.Fork([
+            tap.First([strand_1, strand_2], name="1v2"),
+            tap.First([strand_2, strand_3], name="2v3"),
+        ])
+        yield tap.Call(sender, (5,))
+        yield tap.Call(sender, (1,))
+        yield tap.Call(sender, (3,))
+        value = yield tap.Join(results, name="joinfork")
+        yield tap.Join(strand_2, name="joincanceled")
+        return value
+
+    with pytest.raises(tap.TapystryError) as x:
+        tap.run(fn)
+    assert str(x.value).startswith("Hanging strands detected waiting for Race(Join(joincanceled))")
+
+
+def test_multifirst_no_cancel():
+    def sender(value):
+        yield tap.Send('key', value)
+
+    def receiver(wait_value):
+        value = yield tap.Receive('key', lambda x: x == wait_value)
+        return value
+
+    def fn():
+        strand_1 = yield tap.CallFork(receiver, (1,))
+        strand_2 = yield tap.CallFork(receiver, (2,))
+        strand_3 = yield tap.CallFork(receiver, (3,))
+        results = yield tap.Fork([
+            tap.First([strand_1, strand_2], name="1v2", cancel_losers=False),
+            tap.First([strand_2, strand_3], name="2v3", cancel_losers=False),
+        ])
+        yield tap.Call(sender, (5,))
+        yield tap.Call(sender, (1,))
+        yield tap.Call(sender, (3,))
+        value = yield tap.Join(results, name="joinfork")
+        yield tap.Call(sender, (2,))
+        yield tap.Join(strand_2, name="joincanceled")
+        return value
+
+    assert tap.run(fn) == [
+        (0, 1),
+        (1, 3),
+    ]
+
+
 def test_yield_from():
     def fn1(value):
         yield tap.Send('key1', value)

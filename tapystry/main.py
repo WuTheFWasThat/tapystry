@@ -63,8 +63,9 @@ class CallFork(Effect):
 
 class First(Effect):
     """NOTE: use of this can be dangerous, as it cancels losers"""
-    def __init__(self, strands, name=None):
+    def __init__(self, strands, name=None, cancel_losers=True):
         self.strands = strands
+        self.cancel_losers = cancel_losers
         if name is None:
             name = ", ".join([str(x) for x in self.strands])
         self.name = name
@@ -229,7 +230,7 @@ def run(gen, args=(), kwargs=None):
             return True
         waiting[key].append(receive)
 
-    def add_racing_strand(racing_strands, race_strand):
+    def add_racing_strand(racing_strands, race_strand, cancel_losers):
         assert race_strand not in hanging_strands
         hanging_strands.add(race_strand)
 
@@ -238,14 +239,17 @@ def run(gen, args=(), kwargs=None):
         def receive_fn(i):
             def receive(val):
                 nonlocal received
-                assert not received
-                received = True
+                assert not (cancel_losers and received)
+                if received:
+                    return
                 for j, strand in enumerate(racing_strands):
                     if j == i:
                         assert strand.is_done()
                     else:
                         assert not strand.is_done()
-                        strand.cancel()
+                        if cancel_losers:
+                            strand.cancel()
+                received = True
                 assert race_strand in hanging_strands
                 hanging_strands.remove(race_strand)
                 advance_strand(race_strand, (i, val))
@@ -300,7 +304,7 @@ def run(gen, args=(), kwargs=None):
                 else:
                     advance_strand(fork_strand)
         elif isinstance(effect, First):
-            add_racing_strand(effect.strands, item.strand)
+            add_racing_strand(effect.strands, item.strand, effect.cancel_losers)
         elif isinstance(effect, Cancel):
             effect.strand.cancel()
             advance_strand(item.strand)

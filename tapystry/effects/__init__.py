@@ -30,20 +30,23 @@ def All(effects):
     return Call(all)
 
 
-def Join(tasks):
+def Join(strands):
+    """
+    Returns the result of a strand (or nested structure of strands)
+    """
     def join():
-        if isinstance(tasks, Strand):
-            if tasks.is_done():
-                return tasks.get_result()
-            key, val = yield First([tasks])
+        if isinstance(strands, Strand):
+            if strands.is_done():
+                return strands.get_result()
+            key, val = yield First([strands])
             assert key == 0
             return val
-        elif isinstance(tasks, list):
-            vals = yield All([Join(v) for v in tasks])
+        elif isinstance(strands, list):
+            vals = yield All([Join(v) for v in strands])
             return vals
         else:
-            assert isinstance(tasks, dict), tasks
-            vals = yield All({k: Join(v) for k, v in tasks.items()})
+            assert isinstance(strands, dict), strands
+            vals = yield All({k: Join(v) for k, v in strands.items()})
             return vals
 
     return Call(join)
@@ -51,7 +54,7 @@ def Join(tasks):
 
 def Fork(effects):
     """Do each of the effects in parallel.
-    Returns a task, whose result reflects the same structure as the effects passed in
+    Returns a strand, whose result reflects the same structure as the effects passed in
     """
 
     def call_fork(effect):
@@ -71,7 +74,8 @@ def Fork(effects):
 
 
 def Race(effects):
-    """Wait for the first of the effects to finish
+    """Wait for the first of the effects to finish.
+    Returns a tuple with the key of the winning item, and its value
     """
     def race():
         if isinstance(effects, list):
@@ -80,12 +84,12 @@ def Race(effects):
         else:
             assert isinstance(effects, dict)
             keys, effects_array = zip(*effects.items())
-        tasks = []
+        strands = []
         for key, effect in zip(keys, effects_array):
-            task = yield Fork(effect)
-            if task.is_done():
-                return key, task.get_result()
-            tasks.append(task)
-        i, result = yield First(tasks)
+            strand = yield Fork(effect)
+            if strand.is_done():
+                return key, strand.get_result()
+            strands.append(strand)
+        i, result = yield First(strands)
         return keys[i], result
     return Call(race)

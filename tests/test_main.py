@@ -20,12 +20,11 @@ def test_receive():
         return value
 
     def fn():
-        recv_task = yield tap.CallFork(receiver)
-        send_task = yield tap.CallFork(sender, 5)
-        yield tap.Join(send_task)
-        value = yield tap.Join(recv_task)
+        recv_strand = yield tap.CallFork(receiver)
+        send_strand = yield tap.CallFork(sender, 5)
+        value = yield tap.Join(recv_strand)
         # join again should give the same thing, it's already done
-        value1 = yield tap.Join(recv_task)
+        value1 = yield tap.Join(recv_strand)
         assert value1 == value
         return value
 
@@ -42,10 +41,10 @@ def test_never_receive():
 
     def fn():
         # fork in wrong order!
-        send_task = yield tap.CallFork(sender, 5)
-        recv_task = yield tap.CallFork(receiver)
-        yield tap.Join(send_task)
-        value = yield tap.Join(recv_task)
+        send_strand = yield tap.CallFork(sender, 5)
+        recv_strand = yield tap.CallFork(receiver)
+        yield tap.Join(send_strand)
+        value = yield tap.Join(recv_strand)
         return value
 
     with pytest.raises(tap.TapystryError) as x:
@@ -120,10 +119,10 @@ def test_cancel():
         return 10
 
     def fn():
-        task = yield tap.CallFork(add_three, 5)
+        strand = yield tap.CallFork(add_three, 5)
         yield tap.Send('key')
         yield tap.Send('key')
-        yield tap.Cancel(task)
+        yield tap.Cancel(strand)
 
     tap.run(fn)
     assert a == 10
@@ -138,12 +137,12 @@ def test_multifirst():
         return value
 
     def fn():
-        task_1 = yield tap.CallFork(receiver, 1)
-        task_2 = yield tap.CallFork(receiver, 2)
-        task_3 = yield tap.CallFork(receiver, 3)
+        strand_1 = yield tap.CallFork(receiver, 1)
+        strand_2 = yield tap.CallFork(receiver, 2)
+        strand_3 = yield tap.CallFork(receiver, 3)
         results = yield tap.Fork([
-            tap.First([task_1, task_2, task_3]),
-            tap.First([task_2, task_1]),
+            tap.First([strand_1, strand_2, strand_3]),
+            tap.First([strand_2, strand_1]),
         ])
         yield tap.Call(sender, 5)
         yield tap.Call(sender, 3)
@@ -151,7 +150,7 @@ def test_multifirst():
         value = yield tap.Join(results)
         return value
 
-    # the first race resolves first, thus cancelling tasks 1 and 2, preventing the second from ever finishing
+    # the first race resolves first, thus cancelling strands 1 and 2, preventing the second from ever finishing
     with pytest.raises(tap.TapystryError) as x:
         tap.run(fn)
     assert str(x.value).startswith("Hanging strands")
@@ -166,12 +165,12 @@ def test_multifirst_again():
         return value
 
     def fn():
-        task_1 = yield tap.CallFork(receiver, 1)
-        task_2 = yield tap.CallFork(receiver, 2)
-        task_3 = yield tap.CallFork(receiver, 3)
+        strand_1 = yield tap.CallFork(receiver, 1)
+        strand_2 = yield tap.CallFork(receiver, 2)
+        strand_3 = yield tap.CallFork(receiver, 3)
         results = yield tap.Fork([
-            tap.First([task_1, task_2]),
-            tap.First([task_2, task_3]),
+            tap.First([strand_1, strand_2]),
+            tap.First([strand_2, strand_3]),
         ])
         yield tap.Call(sender, 5)
         yield tap.Call(sender, 1)

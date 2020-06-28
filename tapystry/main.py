@@ -176,7 +176,7 @@ def run(gen, args=(), kwargs=None):
             raise TapystryError(f"Strand yielded non-effect {type(effect)}")
 
         if isinstance(effect, Send):
-            # prioritize the triggered stuff over returning the current task
+            # prioritize the triggered stuff over returning the current strand
             q.put(_QueueItem(item.strand))
             resolve_waiting("send." + effect.key, effect.value)
         elif isinstance(effect, Receive):
@@ -189,7 +189,7 @@ def run(gen, args=(), kwargs=None):
         elif isinstance(effect, CallFork):
             strand = Strand(effect.gen, effect.args, effect.kwargs)
             item.strand._children.append(strand)
-            # prioritize starting the forked task over returning the task
+            # prioritize starting the forked strand over returning the strand
             q.put(_QueueItem(item.strand, strand))
             q.put(_QueueItem(strand))
         elif isinstance(effect, First):

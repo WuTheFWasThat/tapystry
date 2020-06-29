@@ -77,6 +77,46 @@ def test_race():
     assert tap.run(fn) == (1, 2)
 
 
+def test_race_dict():
+    def sender(value):
+        yield tap.Send('key', value)
+        return "sent"
+
+    def incrementer():
+        value = 0
+        while True:
+            winner, received_val = yield tap.Race(dict(
+                receive=tap.Receive('key'),
+                exit=tap.Receive('exit'),
+            ))
+            if winner == 'exit':
+                break
+            else:
+                assert winner == 'receive'
+                value += received_val
+        return value
+
+    def fn():
+        # fork off a strand that increments
+        recv_strand = yield tap.CallFork(incrementer)
+        # send a value to add
+        sent = yield tap.Call(sender, (5,))
+        assert sent == "sent"
+        # equivalent syntax using yield from
+        sent = yield from sender(8)
+        assert sent == "sent"
+        # forked process is not yet done
+        assert not recv_strand.is_done()
+        yield tap.Send("exit")
+        # this value won't get received
+        sent = yield tap.Call(sender, (1,))
+        assert sent == "sent"
+        value = yield tap.Join(recv_strand)
+        return value
+
+    assert tap.run(fn) == 13
+
+
 def test_nested_cancel():
     a = 0
     b = 0

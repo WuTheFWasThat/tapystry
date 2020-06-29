@@ -20,13 +20,14 @@ def sender(value):
 def incrementer():
     value = 0
     while True:
-        winner, received_val = yield tap.Race([
-            tap.Receive('key'),
-            tap.Receive('break'),
-        ])
-        if winner == 1:
+        winner, received_val = yield tap.Race(dict(
+            receive=tap.Receive('key'),
+            exit=tap.Receive('exit'),
+        ))
+        if winner == 'exit':
             break
         else:
+            assert winner == 'receive'
             value += received_val
     return value
 
@@ -41,7 +42,7 @@ def fn():
     assert sent == "sent"
     # forked process is not yet done
     assert not recv_strand.is_done()
-    yield tap.Send("break")
+    yield tap.Send("exit")
     # this value won't get received
     sent = yield tap.Call(sender, (1,))
     assert sent == "sent"

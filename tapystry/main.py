@@ -18,9 +18,10 @@ class Effect(metaclass=abc.ABCMeta):
 
 
 class Send(Effect):
-    def __init__(self, key, value=None, name=None, **effect_kwargs):
+    def __init__(self, key, value=None, name=None, immediate=False, **effect_kwargs):
         self.key = key
         self.value = value
+        self.immediate = immediate
         if name is None:
             name = key
         super().__init__(type="Send", name=name, **effect_kwargs)
@@ -143,6 +144,7 @@ class Strand():
         return self._result
 
     def cancel(self):
+        # if self._done:  ??
         if self._effect is not None:
             self._effect.cancel()
         for child in self._children:
@@ -169,7 +171,7 @@ class _QueueItem():
         self.wake_time = wake_time
 
 
-def run(gen, args=(), kwargs=None):
+def run(gen, args=(), kwargs=None, debug=False):
     # dict from string to waiting functions
     waiting = defaultdict(list)
     # dict from strand to waiting key
@@ -185,7 +187,10 @@ def run(gen, args=(), kwargs=None):
         if not isinstance(effect, Effect):
             raise TapystryError(f"Strand yielded non-effect {type(effect)}")
         if isinstance(effect, Send):
-            q.appendleft(_QueueItem(effect, strand))
+            if effect.immediate:
+                q.append(_QueueItem(effect, strand))
+            else:
+                q.appendleft(_QueueItem(effect, strand))
         elif isinstance(effect, Sleep):
             wake_time = time.time() + effect.t
             q.appendleft(_QueueItem(effect, strand, wake_time))
@@ -249,6 +254,8 @@ def run(gen, args=(), kwargs=None):
 
     def resolve_waiting(wait_key, value):
         fns = waiting[wait_key]
+        if debug:
+            print("resolving", wait_key, len(fns))
         # clear first in case it mutates
         waiting[wait_key] = [fn for fn in fns if not fn(value)]
 
@@ -263,6 +270,8 @@ def run(gen, args=(), kwargs=None):
         if item.strand.is_canceled():
             continue
         effect = item.effect
+        if debug:
+            print(f"Handling {effect} (from {item.strand})")
 
         if not isinstance(effect, Effect):
             raise TapystryError(f"Strand yielded non-effect {type(effect)}")

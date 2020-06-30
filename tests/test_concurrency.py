@@ -123,3 +123,65 @@ def test_lock_cancel_mid_acquire():
     tap.run(fn)
 
 
+def test_lock_cancel_after_acquire():
+    lock = tap.Lock()
+
+    def acquire():
+        release = yield lock.Acquire()
+        yield tap.Receive("unlock")
+        yield release
+
+
+    def fn():
+        t = yield tap.CallFork(acquire)
+        yield tap.Sleep(0.001)
+        yield tap.Cancel(t)
+        t = yield tap.CallFork(acquire)
+        yield tap.Sleep(0.001)
+
+    with pytest.raises(tap.TapystryError) as x:
+        tap.run(fn)
+    # TODO fix
+    assert str(x.value).startswith("Hanging strands detected waiting for Receive(lock") or \
+        str(x.value).startswith("Hanging strands detected waiting for Call(acquire")
+
+
+def test_lock_cancel_mid_acquire_trickier():
+    a = 0
+
+    lock = tap.Lock()
+
+    def acquire(x, to_cancel):
+        yield tap.Receive(str(x))
+        release = yield lock.Acquire()
+        nonlocal a
+        a += 5
+        if to_cancel is not None:
+            yield tap.Fork(tap.Sequence([
+                tap.Receive(str(x)),
+                tap.Cancel(to_cancel),
+            ]))
+        yield tap.Fork(tap.Sequence([
+            tap.Receive(str(x)),
+            release
+        ]))
+
+
+    def fn():
+        t = yield tap.CallFork(acquire, (1, None))
+        yield tap.CallFork(acquire, (2, t))
+        yield tap.CallFork(acquire, (3, None))
+        yield tap.Send("2")
+        yield tap.Send("1")
+        yield tap.Sleep(0.001)
+        assert a == 5
+        yield tap.Send("3")
+        yield tap.Send("2")  # this simultaneously cancels 1 and unlocks 2
+        yield tap.Send("3")
+
+        yield tap.Sleep(0.001)
+        assert a == 10
+
+    tap.run(fn)
+
+

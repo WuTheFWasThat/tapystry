@@ -8,9 +8,11 @@ class Lock():
         self._id = uuid4()
         self._q = deque()
         self.name = name or ""
+        self._counter = 0
 
     def Acquire(self):
-        acquire_id = self._id.hex + uuid4().hex
+        acquire_id = self._counter
+        self._counter += 1
 
         def remove():
             self._q.remove(acquire_id)
@@ -19,8 +21,8 @@ class Lock():
             if not len(self._q) or acquire_id != self._q.popleft():
                 raise TapystryError(f"Yielded same lock release multiple times?  {self.name}")
             if len(self._q):
-                # TODO: is this still buggy if the receive gets canceled before the send happens?
-                yield Send(f"lock.{self._id}.{self._q[0]}")
+                # use immediate=True to make sure receiving thread doesn't get canceled before the receive happens
+                yield Send(f"lock.{self._id}.{self._q[0]}", immediate=True)
         Release = Call(release)
 
         def acquire():

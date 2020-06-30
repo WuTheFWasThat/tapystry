@@ -96,6 +96,29 @@ class Sleep(Effect):
         return f"Sleep({self.name})"
 
 
+class Acquire(Effect):
+    def __init__(self, key, name=None):
+        self.key = key
+        if name is None:
+            name = key
+        self.name = name
+
+    def __str__(self):
+        return f"Acquire({self.name})"
+
+
+class _Release(Effect):
+    def __init__(self, key, name):
+        self.key = key
+        if name is None:
+            name = key
+        self.name = name
+        self.id = uuid4()
+
+    def __str__(self):
+        return f"Release({self.name})"
+
+
 class TapystryError(Exception):
     pass
 
@@ -186,6 +209,9 @@ def run(gen, args=(), kwargs=None):
     # dict from strand to waiting key
     # TODO: gc hanging strands
     hanging_strands = set()
+    # dict from key to strands waiting on a lock
+    # first one is always the one with the unlock
+    lock_strands = defaultdict(deque)
     q = deque()
     initial_strand = Strand(gen, args, kwargs)
     if initial_strand.is_done():
@@ -305,6 +331,22 @@ def run(gen, args=(), kwargs=None):
             effect.strand.cancel()
             advance_strand(item.strand)
         elif isinstance(effect, Sleep):
+            advance_strand(item.strand)
+        elif isinstance(effect, Acquire):
+            release = _Release(effect.key, effect.name)
+            queue_empty = not len(lock_strands[effect.key])
+            lock_strands[effect.key].append(release)
+            if queue_empty:
+                advance_strand(item.strand, release)
+            else:
+                prev_release = lock_strands[effect.key][-2]
+                add_waiting_strand("lock." + prev_release.id.hex, item.strand)
+        elif isinstance(effect, _Release):
+            if not len(lock_strands[effect.key]) or effect != lock_strands[effect.key].popleft():
+                raise TapystryError(f"Yielded same lock release multiple times?  {effect.key}")
+            # resolve with the next lock, if needed
+            if len(lock_strands[effect.key]):
+                resolve_waiting("lock." + effect.id.hex, lock_strands[effect.key][0])
             advance_strand(item.strand)
         else:
             raise TapystryError(f"Unhandled effect type {type(effect)}")

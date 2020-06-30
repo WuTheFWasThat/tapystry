@@ -155,12 +155,12 @@ def test_subscribe():
     def recv_all(v):
         nonlocal a
         a += v
-        yield tap.Receive("unlock")
+        yield tap.Receive("finish")
 
     def recv_leading(v):
         nonlocal b
         b += v
-        yield tap.Receive("unlock")
+        yield tap.Receive("finish")
 
     def fn():
         ta = yield tap.Subscribe("key", recv_all, predicate=lambda x: x % 2 == 1)
@@ -171,7 +171,7 @@ def test_subscribe():
         yield tap.Sleep(0)
         assert a == 1 + 3
         assert b == 1
-        yield tap.Send("unlock")
+        yield tap.Send("finish")
         for i in range(4):
             yield tap.Send("key", i)
         yield tap.Sleep(0)
@@ -180,7 +180,7 @@ def test_subscribe():
 
         ta.cancel()
         tb.cancel()
-        yield tap.Send("unlock")
+        yield tap.Send("finish")
         for i in range(4):
             yield tap.Send("key", i)
         yield tap.Sleep(0)
@@ -194,7 +194,7 @@ def test_subscribe_latest():
     a = 0
 
     def recv_latest(v):
-        yield tap.Receive("unlock")
+        yield tap.Receive("start")
         nonlocal a
         a += v
 
@@ -203,16 +203,16 @@ def test_subscribe_latest():
 
         yield tap.Send("key", 3)
         yield tap.Send("key", 5)
-        yield tap.Send("unlock")
-        yield tap.Send("unlock")
+        yield tap.Send("start")
+        yield tap.Send("start")
         yield tap.Sleep(0)
         assert a == 5
 
         yield tap.Send("key", 3)
         yield tap.Send("key", 5)
         yield tap.Send("key", 1)
-        yield tap.Send("unlock")
-        yield tap.Send("unlock")
+        yield tap.Send("start")
+        yield tap.Send("start")
         yield tap.Sleep(0)
         assert a == 6
         t.cancel()
@@ -230,7 +230,7 @@ def test_subscribes_all():
     def increment(_x):
         nonlocal a
         a += 1
-        yield tap.Receive("unlock")
+        yield tap.Receive("finish")
 
     def fn():
         yield tap.CallFork(recv_send)

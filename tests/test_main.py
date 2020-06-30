@@ -313,3 +313,70 @@ def test_sleep():
         assert time.time() - t < 0.01
 
     tap.run(fn)
+
+
+def test_lock():
+    a = 0
+
+    def waits():
+        yield tap.Receive("msg")
+        nonlocal a
+        a += 1
+        unlock = yield tap.Acquire("lock")
+        a += 2
+        yield unlock
+
+    def nowaits():
+        unlock = yield tap.Acquire("lock")
+        nonlocal a
+        a += 5
+        yield tap.Receive("unlock")
+        yield unlock
+
+
+    def fn():
+        yield tap.CallFork(waits)
+        yield tap.CallFork(nowaits)
+        yield tap.CallFork(nowaits)
+        yield tap.Sleep(0)
+        assert a == 5
+
+        # the waiting strand finally gets to acquire lock, but it is the latest
+        yield tap.Send("msg")
+        yield tap.Sleep(0)
+        assert a == 6
+
+        yield tap.Send("unlock")
+        yield tap.Sleep(0)
+        assert a == 11
+
+        yield tap.Send("unlock")
+        yield tap.Sleep(0)
+        assert a == 13
+
+    tap.run(fn)
+
+
+def test_lock_hang():
+    def fn():
+        yield tap.Acquire("lock")
+        yield tap.Acquire("lock")
+
+    with pytest.raises(tap.TapystryError) as x:
+        tap.run(fn)
+    assert str(x.value).startswith("Hanging strands detected waiting for Acquire(lock)")
+
+
+def test_unlock_twice():
+
+    def dummy(eff):
+        yield eff
+
+    def fn():
+        unlock = yield tap.Acquire("lock")
+        yield tap.Call(dummy, (unlock,))
+        yield unlock
+
+    with pytest.raises(tap.TapystryError) as x:
+        tap.run(fn)
+    assert str(x.value).startswith("Yielded same lock release multiple times?")

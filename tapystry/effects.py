@@ -1,4 +1,4 @@
-from tapystry import Effect, Strand, Call, Send, Receive, CallFork, First
+from tapystry import Effect, Strand, Call, Send, Receive, CallFork, First, Cancel
 
 
 def Sequence(effects, name=None):
@@ -95,17 +95,26 @@ def Race(effects, name=None):
     return Call(race)
 
 
-def Subscribe(message_key, fn, predicate=None, leading_only=False):
+def Subscribe(message_key, fn, predicate=None, leading_only=False, latest_only=False):
     """
-    Upon receiving any message, runs the specified function on the value
-    Returns the strand running the subscription
+    Upon receiving any message, runs the specified function on the sent value.
+    Returns the strand running the subscription.
+
+    By default, runs on every single message (like takeEvery in redux-saga)
+    If leading_only is True, then we don't start new calls to fn while old ones are running (like takeLeading)
+    If latest_only is True, then we cancel old calls to make way for new calls (like takeLatest)
     """
+    assert not (leading_only and latest_only)
+
     def subscribe():
+        task = None
         while True:
             msg = yield Receive(message_key, predicate=predicate)
             if leading_only:
                 yield Call(fn, (msg,))
             else:
-                yield CallFork(fn, (msg,))
+                if latest_only and task is not None:
+                    yield Cancel(task)
+                task = yield CallFork(fn, (msg,))
 
     return CallFork(subscribe)

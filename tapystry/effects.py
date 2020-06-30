@@ -95,7 +95,7 @@ def Race(effects, name=None):
     return Call(race)
 
 
-def Subscribe(message_key, fn, predicate=None, latest_only=False):
+def Subscribe(message_key, fn, predicate=None, leading_only=False):
     """
     Upon receiving any message, runs the specified function on the value
     Returns the strand running the subscription
@@ -103,9 +103,9 @@ def Subscribe(message_key, fn, predicate=None, latest_only=False):
     def subscribe():
         while True:
             msg = yield Receive(message_key, predicate=predicate)
-            if latest_only:
+            if leading_only:
                 yield Call(fn, (msg,))
             else:
-                yield CallFork(fn, (msg,), immediate=False)
+                yield CallFork(fn, (msg,))
 
     return CallFork(subscribe)

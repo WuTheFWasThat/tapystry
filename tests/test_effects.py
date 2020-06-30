@@ -164,7 +164,7 @@ def test_subscribe():
 
     def fn():
         ta = yield tap.Subscribe("key", recv_all, predicate=lambda x: x % 2 == 1)
-        tb = yield tap.Subscribe("key", recv_latest, predicate=lambda x: x % 2 == 1, latest_only=True)
+        tb = yield tap.Subscribe("key", recv_latest, predicate=lambda x: x % 2 == 1, leading_only=True)
 
         for i in range(4):
             yield tap.Send("key", i)

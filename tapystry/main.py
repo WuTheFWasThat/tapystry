@@ -48,11 +48,10 @@ class Call(Effect):
 
 
 class CallFork(Effect):
-    def __init__(self, gen, args=(), kwargs=None, name=None, immediate=True):
+    def __init__(self, gen, args=(), kwargs=None, name=None):
         self.gen = gen
         self.args = args
         self.kwargs = kwargs
-        self.immediate = immediate
         if name is None:
             name = gen.__name__
         self.name = name
@@ -299,10 +298,7 @@ def run(gen, args=(), kwargs=None):
             advance_strand(item.strand, fork_strand)
             if not fork_strand.is_done():
                 # otherwise wasn't even a generator
-                if effect.immediate:
-                    advance_strand(fork_strand)
-                else:
-                    advance_strand(fork_strand)
+                advance_strand(fork_strand)
         elif isinstance(effect, First):
             add_racing_strand(effect.strands, item.strand, effect.cancel_losers)
         elif isinstance(effect, Cancel):

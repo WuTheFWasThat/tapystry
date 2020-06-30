@@ -89,3 +89,37 @@ def test_create_acquires_out_of_order():
         yield r1
 
     tap.run(fn)
+
+
+def test_lock_cancel_mid_acquire():
+    a = 0
+
+    lock = tap.Lock()
+
+    def acquire():
+        release = yield lock.Acquire()
+        nonlocal a
+        a += 5
+        yield tap.Receive("unlock")
+        yield release
+
+
+    def fn():
+        yield tap.CallFork(acquire)
+        t = yield tap.CallFork(acquire)
+        yield tap.CallFork(acquire)
+        yield tap.Sleep(0)
+        assert a == 5
+
+        yield tap.Cancel(t)
+        yield tap.Send("unlock")
+        yield tap.Sleep(0.001)
+        assert a == 10
+
+        yield tap.Send("unlock")
+        yield tap.Sleep(0.001)
+        assert a == 10
+
+    tap.run(fn)
+
+

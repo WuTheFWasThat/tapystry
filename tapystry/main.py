@@ -6,94 +6,81 @@ import time
 
 
 class Effect(metaclass=abc.ABCMeta):
-    def __init__(self):
-        pass
+    def __init__(self, type, oncancel=(lambda: None), name=None):
+        self.type = type
+        self.cancel = oncancel
+        self.name = name
+
+    def __str__(self):
+        if self.name is not None:
+            return f"{self.type}({self.name})"
+        return f"{self.type}"
 
 
 class Send(Effect):
-    def __init__(self, key, value=None, name=None):
+    def __init__(self, key, value=None, name=None, **effect_kwargs):
         self.key = key
         self.value = value
         if name is None:
             name = key
-        self.name = name
-
-    def __str__(self):
-        return f"Send({self.name})"
+        super().__init__(type="Send", name=name, **effect_kwargs)
 
 
 class Receive(Effect):
-    def __init__(self, key, predicate=None, name=None):
+    def __init__(self, key, predicate=None, name=None, **effect_kwargs):
         self.key = key
         self.predicate = predicate
         if name is None:
             name = key
-        self.name = name
-
-    def __str__(self):
-        return f"Receive({self.name})"
+        super().__init__(type="Receive", name=name, **effect_kwargs)
 
 
 class Call(Effect):
-    def __init__(self, gen, args=(), kwargs=None, name=None):
+    def __init__(self, gen, args=(), kwargs=None, name=None, **effect_kwargs):
         self.gen = gen
         self.args = args
         self.kwargs = kwargs
         if name is None:
             name = gen.__name__
-        self.name = name
-
-    def __str__(self):
-        return f"Call({self.name})"
+        super().__init__(type="Call", name=name, **effect_kwargs)
 
 
 class CallFork(Effect):
-    def __init__(self, gen, args=(), kwargs=None, name=None):
+    def __init__(self, gen, args=(), kwargs=None, name=None, **effect_kwargs):
         self.gen = gen
         self.args = args
         self.kwargs = kwargs
         if name is None:
             name = gen.__name__
-        self.name = name
-
-    def __str__(self):
-        return f"CallFork({self.name})"
+        super().__init__(type="CallFork", name=name, **effect_kwargs)
 
 
 class First(Effect):
     """NOTE: use of this can be dangerous, as it cancels losers"""
-    def __init__(self, strands, name=None, cancel_losers=True):
+    def __init__(self, strands, name=None, cancel_losers=True, **effect_kwargs):
         self.strands = strands
         self.cancel_losers = cancel_losers
         if name is None:
             name = ", ".join([str(x) for x in self.strands])
         self.name = name
-
-    def __str__(self):
-        return f"Race({self.name})"
+        super().__init__(type="Race", name=name, **effect_kwargs)
 
 
 # TODO: does this really need to be an effect?  what's wrong with just exposing _canceled on Strand?
 class Cancel(Effect):
-    def __init__(self, strand, name=None):
+    def __init__(self, strand, name=None, **effect_kwargs):
         self.strand = strand
         if name is None:
             name = str(self.strand)
-        self.name = name
-
-    def __str__(self):
-        return f"Cancel({self.name})"
+        super().__init__(type="Cancel", name=name, **effect_kwargs)
 
 
 class Sleep(Effect):
-    def __init__(self, t, name=None):
+    def __init__(self, t, name=None, **effect_kwargs):
         self.t = t
         if name is None:
             name = str(t)
-        self.name = name
-
-    def __str__(self):
-        return f"Sleep({self.name})"
+        super().__init__(type="Sleep", name=name, **effect_kwargs)
 
 
 class TapystryError(Exception):
@@ -156,6 +143,8 @@ class Strand():
         return self._result
 
     def cancel(self):
+        if self._effect is not None:
+            self._effect.cancel()
         for child in self._children:
             child.cancel()
         self._canceled = True

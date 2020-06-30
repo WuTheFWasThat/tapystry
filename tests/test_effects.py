@@ -80,12 +80,12 @@ def test_race():
 def test_race_dict():
     def broadcaster(value):
         yield tap.Broadcast('key', value)
-        return "sent"
+        return "success"
 
     def incrementer():
-        sum_value = 0
+        value = 0
         while True:
-            winner, value = yield tap.Race(dict(
+            winner, received_val = yield tap.Race(dict(
                 receive=tap.Receive('key'),
                 exit=tap.Receive('exit'),
             ))
@@ -93,24 +93,24 @@ def test_race_dict():
                 break
             else:
                 assert winner == 'receive'
-                sum_value += value
-        return sum_value
+                value += received_val
+        return value
 
     def fn():
         # fork off a strand that increments
         recv_strand = yield tap.CallFork(incrementer)
         # broadcast a value to add
-        sent = yield tap.Call(broadcaster, (5,))
-        assert sent == "sent"
+        success = yield tap.Call(broadcaster, (5,))
+        assert success == "success"
         # equivalent syntax using yield from
-        sent = yield from broadcaster(8)
-        assert sent == "sent"
+        success = yield from broadcaster(8)
+        assert success == "success"
         # forked process is not yet done
         assert not recv_strand.is_done()
         yield tap.Broadcast("exit")
         # this value won't get received
-        sent = yield tap.Call(broadcaster, (1,))
-        assert sent == "sent"
+        success = yield tap.Call(broadcaster, (1,))
+        assert success == "success"
         value = yield tap.Join(recv_strand)
         return value
 

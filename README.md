@@ -13,9 +13,9 @@ It's most easily understood by example!
 ```
 import tapystry as tap
 
-def sender(value):
+def broadcaster(value):
     yield tap.Broadcast('key', value)
-    return "sent"
+    return "success"
 
 def incrementer():
     value = 0
@@ -34,18 +34,18 @@ def incrementer():
 def fn():
     # fork off a strand that increments
     recv_strand = yield tap.CallFork(incrementer)
-    # send a value to add
-    sent = yield tap.Call(sender, (5,))
-    assert sent == "sent"
+    # broadcast a value to add
+    success = yield tap.Call(broadcaster, (5,))
+    assert success == "success"
     # equivalent syntax using yield from
-    sent = yield from sender(8)
-    assert sent == "sent"
+    success = yield from broadcaster(8)
+    assert success == "success"
     # forked process is not yet done
     assert not recv_strand.is_done()
     yield tap.Broadcast("exit")
     # this value won't get received
-    sent = yield tap.Call(sender, (1,))
-    assert sent == "sent"
+    success = yield tap.Call(broadcaster, (1,))
+    assert success == "success"
     value = yield tap.Join(recv_strand)
     return value
 

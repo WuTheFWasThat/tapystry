@@ -156,31 +156,41 @@ def test_lock_cancel_mid_acquire_trickier():
         release = yield lock.Acquire()
         nonlocal a
         a += 5
+        to_join = []
         if to_cancel is not None:
-            yield tap.Fork(tap.Sequence([
+            t = yield tap.Fork(tap.Sequence([
                 tap.Receive(str(x)),
                 tap.Cancel(to_cancel),
             ]))
-        yield tap.Fork(tap.Sequence([
+            to_join.append(t)
+        t = yield tap.Fork(tap.Sequence([
             tap.Receive(str(x)),
             release
         ]))
+        to_join.append(t)
+        yield tap.Join(to_join)
 
 
     def fn():
-        t = yield tap.CallFork(acquire, (1, None))
-        yield tap.CallFork(acquire, (2, t))
-        yield tap.CallFork(acquire, (3, None))
+        t1 = yield tap.CallFork(acquire, (1, None))
+        t2 = yield tap.CallFork(acquire, (2, t1))
+        t3 = yield tap.CallFork(acquire, (3, None))
         yield tap.Broadcast("2")
         yield tap.Broadcast("1")
         yield tap.Sleep(0.001)
         assert a == 5
         yield tap.Broadcast("3")
-        yield tap.Broadcast("2")  # this simultaneously cancels 1 and unlocks 2
-        yield tap.Broadcast("3")
+        yield tap.Broadcast("2")  # this simultaneously tries to cancel 1 and unlocks
 
         yield tap.Sleep(0.001)
         assert a == 10
+
+        yield tap.Broadcast("1")
+        # 1 gets canceled after the acquire, so it's too late to release
+        yield tap.Sleep(0.001)
+        assert a == 10
+        # yield tap.Join([t1, t2, t3])
+        yield tap.Cancel(t3)
 
     tap.run(fn)
 

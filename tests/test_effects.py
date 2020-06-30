@@ -5,7 +5,7 @@ import tapystry as tap
 
 def test_join():
     def ret(value):
-        yield tap.Send('key', value)
+        yield tap.Broadcast('key', value)
         return value
 
     def fn():
@@ -18,7 +18,7 @@ def test_join():
 
 def test_join_dict():
     def ret(value):
-        yield tap.Send('key', value)
+        yield tap.Broadcast('key', value)
         return value
 
     def fn():
@@ -39,7 +39,7 @@ def test_join_dict():
 
 def test_fork():
     def ret(value):
-        yield tap.Send('key', value)
+        yield tap.Broadcast('key', value)
         return value
 
     def fn():
@@ -62,15 +62,15 @@ def test_race():
         yield tap.Receive('key2')
         return 2
 
-    def send():
-        yield tap.Send("key2")
+    def broadcast():
+        yield tap.Broadcast("key2")
 
     def fn():
         t = yield tap.Fork(tap.Race([
             tap.Call(recv1),
             tap.Call(recv2),
         ]))
-        yield tap.Call(send)
+        yield tap.Call(broadcast)
         results = yield tap.Join(t)
         return results
 
@@ -78,14 +78,14 @@ def test_race():
 
 
 def test_race_dict():
-    def sender(value):
-        yield tap.Send('key', value)
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
         return "sent"
 
     def incrementer():
-        value = 0
+        sum_value = 0
         while True:
-            winner, received_val = yield tap.Race(dict(
+            winner, value = yield tap.Race(dict(
                 receive=tap.Receive('key'),
                 exit=tap.Receive('exit'),
             ))
@@ -93,23 +93,23 @@ def test_race_dict():
                 break
             else:
                 assert winner == 'receive'
-                value += received_val
-        return value
+                sum_value += value
+        return sum_value
 
     def fn():
         # fork off a strand that increments
         recv_strand = yield tap.CallFork(incrementer)
-        # send a value to add
-        sent = yield tap.Call(sender, (5,))
+        # broadcast a value to add
+        sent = yield tap.Call(broadcaster, (5,))
         assert sent == "sent"
         # equivalent syntax using yield from
-        sent = yield from sender(8)
+        sent = yield from broadcaster(8)
         assert sent == "sent"
         # forked process is not yet done
         assert not recv_strand.is_done()
-        yield tap.Send("exit")
+        yield tap.Broadcast("exit")
         # this value won't get received
-        sent = yield tap.Call(sender, (1,))
+        sent = yield tap.Call(broadcaster, (1,))
         assert sent == "sent"
         value = yield tap.Join(recv_strand)
         return value
@@ -138,11 +138,11 @@ def test_nested_cancel():
     def fn():
         t = yield tap.CallFork(recv_outer)
         for _ in range(4):
-            yield tap.Send("key")
+            yield tap.Broadcast("key")
         # this should also cancel recv_inner
         t.cancel()
         for _ in range(4):
-            yield tap.Send("key")
+            yield tap.Broadcast("key")
         return a, b
 
     assert tap.run(fn) == (2, 4)
@@ -167,22 +167,22 @@ def test_subscribe():
         tb = yield tap.Subscribe("key", recv_leading, predicate=lambda x: x % 2 == 1, leading_only=True)
 
         for i in range(4):
-            yield tap.Send("key", i)
+            yield tap.Broadcast("key", i)
         yield tap.Sleep(0)
         assert a == 1 + 3
         assert b == 1
-        yield tap.Send("finish")
+        yield tap.Broadcast("finish")
         for i in range(4):
-            yield tap.Send("key", i)
+            yield tap.Broadcast("key", i)
         yield tap.Sleep(0)
         assert a == (1 + 3) * 2
         assert b == 2
 
         ta.cancel()
         tb.cancel()
-        yield tap.Send("finish")
+        yield tap.Broadcast("finish")
         for i in range(4):
-            yield tap.Send("key", i)
+            yield tap.Broadcast("key", i)
         yield tap.Sleep(0)
         assert a == (1 + 3) * 2
         assert b == 2
@@ -201,18 +201,18 @@ def test_subscribe_latest():
     def fn():
         t = yield tap.Subscribe("key", recv_latest, latest_only=True)
 
-        yield tap.Send("key", 3)
-        yield tap.Send("key", 5)
-        yield tap.Send("start")
-        yield tap.Send("start")
+        yield tap.Broadcast("key", 3)
+        yield tap.Broadcast("key", 5)
+        yield tap.Broadcast("start")
+        yield tap.Broadcast("start")
         yield tap.Sleep(0)
         assert a == 5
 
-        yield tap.Send("key", 3)
-        yield tap.Send("key", 5)
-        yield tap.Send("key", 1)
-        yield tap.Send("start")
-        yield tap.Send("start")
+        yield tap.Broadcast("key", 3)
+        yield tap.Broadcast("key", 5)
+        yield tap.Broadcast("key", 1)
+        yield tap.Broadcast("start")
+        yield tap.Broadcast("start")
         yield tap.Sleep(0)
         assert a == 6
         t.cancel()
@@ -223,9 +223,9 @@ def test_subscribe_latest():
 def test_subscribes_all():
     a = 0
 
-    def recv_send():
+    def recv_broadcast():
         yield tap.Receive("key")
-        yield tap.Send("key")
+        yield tap.Broadcast("key")
 
     def increment(_x):
         nonlocal a
@@ -233,16 +233,16 @@ def test_subscribes_all():
         yield tap.Receive("finish")
 
     def fn():
-        yield tap.CallFork(recv_send)
+        yield tap.CallFork(recv_broadcast)
         ta = yield tap.Subscribe("key", increment)
-        yield tap.CallFork(recv_send)
+        yield tap.CallFork(recv_broadcast)
 
         yield tap.Sleep(0)
-        yield tap.Send("key", "main")
+        yield tap.Broadcast("key", "main")
         yield tap.Sleep(0)
         assert a == 3
         yield tap.Sleep(0)
-        yield tap.Send("key", "main2")
+        yield tap.Broadcast("key", "main2")
         yield tap.Sleep(0)
         assert a == 4
         ta.cancel()

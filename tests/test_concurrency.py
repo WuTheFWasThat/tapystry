@@ -32,15 +32,15 @@ def test_lock():
         assert a == 5
 
         # the waiting strand finally gets to acquire lock, but it is the latest
-        yield tap.Send("msg")
+        yield tap.Broadcast("msg")
         yield tap.Sleep(0)
         assert a == 6
 
-        yield tap.Send("unlock")
+        yield tap.Broadcast("unlock")
         yield tap.Sleep(0.001)
         assert a == 11
 
-        yield tap.Send("unlock")
+        yield tap.Broadcast("unlock")
         yield tap.Sleep(0.001)
         assert a == 13
 
@@ -112,11 +112,11 @@ def test_lock_cancel_mid_acquire():
         assert a == 5
 
         yield tap.Cancel(t)
-        yield tap.Send("unlock")
+        yield tap.Broadcast("unlock")
         yield tap.Sleep(0.001)
         assert a == 10
 
-        yield tap.Send("unlock")
+        yield tap.Broadcast("unlock")
         yield tap.Sleep(0.001)
         assert a == 10
 
@@ -171,13 +171,13 @@ def test_lock_cancel_mid_acquire_trickier():
         t = yield tap.CallFork(acquire, (1, None))
         yield tap.CallFork(acquire, (2, t))
         yield tap.CallFork(acquire, (3, None))
-        yield tap.Send("2")
-        yield tap.Send("1")
+        yield tap.Broadcast("2")
+        yield tap.Broadcast("1")
         yield tap.Sleep(0.001)
         assert a == 5
-        yield tap.Send("3")
-        yield tap.Send("2")  # this simultaneously cancels 1 and unlocks 2
-        yield tap.Send("3")
+        yield tap.Broadcast("3")
+        yield tap.Broadcast("2")  # this simultaneously cancels 1 and unlocks 2
+        yield tap.Broadcast("3")
 
         yield tap.Sleep(0.001)
         assert a == 10

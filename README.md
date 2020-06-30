@@ -14,7 +14,7 @@ It's most easily understood by example!
 import tapystry as tap
 
 def sender(value):
-    yield tap.Send('key', value)
+    yield tap.Broadcast('key', value)
     return "sent"
 
 def incrementer():
@@ -42,7 +42,7 @@ def fn():
     assert sent == "sent"
     # forked process is not yet done
     assert not recv_strand.is_done()
-    yield tap.Send("exit")
+    yield tap.Broadcast("exit")
     # this value won't get received
     sent = yield tap.Call(sender, (1,))
     assert sent == "sent"

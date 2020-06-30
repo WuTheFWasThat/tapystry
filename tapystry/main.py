@@ -17,14 +17,14 @@ class Effect(metaclass=abc.ABCMeta):
         return f"{self.type}"
 
 
-class Send(Effect):
+class Broadcast(Effect):
     def __init__(self, key, value=None, name=None, immediate=False, **effect_kwargs):
         self.key = key
         self.value = value
         self.immediate = immediate
         if name is None:
             name = key
-        super().__init__(type="Send", name=name, **effect_kwargs)
+        super().__init__(type="Broadcast", name=name, **effect_kwargs)
 
 
 class Receive(Effect):
@@ -186,7 +186,7 @@ def run(gen, args=(), kwargs=None, debug=False):
     def queue_effect(effect, strand):
         if not isinstance(effect, Effect):
             raise TapystryError(f"Strand yielded non-effect {type(effect)}")
-        if isinstance(effect, Send):
+        if isinstance(effect, Broadcast):
             if effect.immediate:
                 q.append(_QueueItem(effect, strand))
             else:
@@ -276,11 +276,11 @@ def run(gen, args=(), kwargs=None, debug=False):
         if not isinstance(effect, Effect):
             raise TapystryError(f"Strand yielded non-effect {type(effect)}")
 
-        if isinstance(effect, Send):
-            resolve_waiting("send." + effect.key, effect.value)
+        if isinstance(effect, Broadcast):
+            resolve_waiting("broadcast." + effect.key, effect.value)
             advance_strand(item.strand)
         elif isinstance(effect, Receive):
-            add_waiting_strand("send." + effect.key, item.strand, effect.predicate)
+            add_waiting_strand("broadcast." + effect.key, item.strand, effect.predicate)
         elif isinstance(effect, Call):
             strand = Strand(effect.gen, effect.args, effect.kwargs, parent=(item.strand, effect.name or "call"))
             item.strand._children.append(strand)
@@ -312,7 +312,7 @@ def run(gen, args=(), kwargs=None, debug=False):
             # TODO: add notes on how this can happen
             # forgetting to join fork or forgot to cancel subscription?
             # joining thread that never ends
-            # receiving message that never sends
+            # receiving message that never gets broadcast
             raise TapystryError(f"Hanging strands detected waiting for {strand._effect}, in {strand.stack()}")
 
     assert initial_strand.is_done()

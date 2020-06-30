@@ -6,15 +6,15 @@ import tapystry as tap
 
 def test_simple():
     def fn():
-        yield tap.Send('key')
+        yield tap.Broadcast('key')
         return 5
 
     assert tap.run(fn) == 5
 
 
 def test_receive():
-    def sender(value):
-        yield tap.Send('key', value)
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
 
     def receiver():
         value = yield tap.Receive('key')
@@ -23,7 +23,7 @@ def test_receive():
     def fn():
         recv_strand = yield tap.CallFork(receiver)
         # even though this is forked, it doesn't end up hanging
-        yield tap.CallFork(sender, (5,))
+        yield tap.CallFork(broadcaster, (5,))
         value = yield tap.Join(recv_strand)
         # join again should give the same thing, it's already done
         value1 = yield tap.Join(recv_strand)
@@ -33,9 +33,9 @@ def test_receive():
     assert tap.run(fn) == 5
 
 
-def test_send_receive_order():
-    def sender(value):
-        yield tap.Send('key', value)
+def test_broadcast_receive_order():
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
 
     def receiver():
         value = yield tap.Receive('key')
@@ -43,9 +43,9 @@ def test_send_receive_order():
 
     def fn():
         # fork in apparently wrong order!
-        send_strand = yield tap.CallFork(sender, (5,))
+        broadcast_strand = yield tap.CallFork(broadcaster, (5,))
         recv_strand = yield tap.CallFork(receiver)
-        yield tap.Join(send_strand)
+        yield tap.Join(broadcast_strand)
         value = yield tap.Join(recv_strand)
         return value
 
@@ -54,8 +54,8 @@ def test_send_receive_order():
 
 
 def test_never_receive():
-    def sender(value):
-        yield tap.Send('key', value)
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
 
     def receiver():
         value = yield tap.Receive('key2')
@@ -63,8 +63,8 @@ def test_never_receive():
 
     def fn():
         recv_strand = yield tap.CallFork(receiver)
-        send_strand = yield tap.CallFork(sender, (5,))
-        yield tap.Join(send_strand)
+        broadcast_strand = yield tap.CallFork(broadcaster, (5,))
+        yield tap.Join(broadcast_strand)
         value = yield tap.Join(recv_strand)
         return value
 
@@ -92,23 +92,23 @@ def test_immediate_return():
 
 
 def test_never_join():
-    def sender(value):
-        yield tap.Send('key', value)
-        yield tap.Send('key2', value)
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
+        yield tap.Broadcast('key2', value)
 
     def fn():
-        yield tap.CallFork(sender, (5,))
+        yield tap.CallFork(broadcaster, (5,))
         return
 
     assert tap.run(fn) is None
 
 
 def test_no_arg():
-    def sender(value):
-        yield tap.Send('key', value)
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
 
     def fn():
-        yield tap.CallFork(sender)
+        yield tap.CallFork(broadcaster)
         return
 
     with pytest.raises(TypeError):
@@ -117,7 +117,7 @@ def test_no_arg():
 
 def test_call():
     def random(value):
-        yield tap.Send('key', value)
+        yield tap.Broadcast('key', value)
         return 10
 
     def fn():
@@ -159,8 +159,8 @@ def test_cancel():
 
     def fn():
         strand = yield tap.CallFork(add_three, (5,))
-        yield tap.Send('key')
-        yield tap.Send('key')
+        yield tap.Broadcast('key')
+        yield tap.Broadcast('key')
         yield tap.Cancel(strand)
 
     tap.run(fn)
@@ -168,8 +168,8 @@ def test_cancel():
 
 
 def test_multifirst():
-    def sender(value):
-        yield tap.Send('key', value)
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
 
     def receiver(wait_value):
         value = yield tap.Receive('key', lambda x: x == wait_value)
@@ -183,9 +183,9 @@ def test_multifirst():
             tap.First([strand_1, strand_2, strand_3]),
             tap.First([strand_2, strand_1]),
         ])
-        yield tap.Call(sender, (5,))
-        yield tap.Call(sender, (3,))
-        yield tap.Call(sender, (1,))
+        yield tap.Call(broadcaster, (5,))
+        yield tap.Call(broadcaster, (3,))
+        yield tap.Call(broadcaster, (1,))
         value = yield tap.Join(results)
         return value
 
@@ -196,8 +196,8 @@ def test_multifirst():
 
 
 def test_multifirst_again():
-    def sender(value):
-        yield tap.Send('key', value)
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
 
     def receiver(wait_value):
         value = yield tap.Receive('key', lambda x: x == wait_value)
@@ -211,9 +211,9 @@ def test_multifirst_again():
             tap.First([strand_1, strand_2], name="1v2"),
             tap.First([strand_2, strand_3], name="2v3"),
         ])
-        yield tap.Call(sender, (5,))
-        yield tap.Call(sender, (1,))
-        yield tap.Call(sender, (3,))
+        yield tap.Call(broadcaster, (5,))
+        yield tap.Call(broadcaster, (1,))
+        yield tap.Call(broadcaster, (3,))
         value = yield tap.Join(results, name="joinfork")
         # yield tap.Join([strand_1, strand_2, strand_3], name="joinstrands")
         return value
@@ -225,8 +225,8 @@ def test_multifirst_again():
 
 
 def test_multifirst_canceled():
-    def sender(value):
-        yield tap.Send('key', value)
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
 
     def receiver(wait_value):
         value = yield tap.Receive('key', lambda x: x == wait_value)
@@ -240,9 +240,9 @@ def test_multifirst_canceled():
             tap.First([strand_1, strand_2], name="1v2"),
             tap.First([strand_2, strand_3], name="2v3"),
         ])
-        yield tap.Call(sender, (5,))
-        yield tap.Call(sender, (1,))
-        yield tap.Call(sender, (3,))
+        yield tap.Call(broadcaster, (5,))
+        yield tap.Call(broadcaster, (1,))
+        yield tap.Call(broadcaster, (3,))
         value = yield tap.Join(results, name="joinfork")
         yield tap.Join(strand_2, name="joincanceled")
         return value
@@ -254,8 +254,8 @@ def test_multifirst_canceled():
 
 
 def test_multifirst_no_cancel():
-    def sender(value):
-        yield tap.Send('key', value)
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
 
     def receiver(wait_value):
         value = yield tap.Receive('key', lambda x: x == wait_value)
@@ -269,11 +269,11 @@ def test_multifirst_no_cancel():
             tap.First([strand_1, strand_2], name="1v2", cancel_losers=False),
             tap.First([strand_2, strand_3], name="2v3", cancel_losers=False),
         ])
-        yield tap.Call(sender, (5,))
-        yield tap.Call(sender, (1,))
-        yield tap.Call(sender, (3,))
+        yield tap.Call(broadcaster, (5,))
+        yield tap.Call(broadcaster, (1,))
+        yield tap.Call(broadcaster, (3,))
         value = yield tap.Join(results, name="joinfork")
-        yield tap.Call(sender, (2,))
+        yield tap.Call(broadcaster, (2,))
         yield tap.Join(strand_2, name="joincanceled")
         return value
 
@@ -285,13 +285,13 @@ def test_multifirst_no_cancel():
 
 def test_yield_from():
     def fn1(value):
-        yield tap.Send('key1', value)
-        yield tap.Send('key2', value)
+        yield tap.Broadcast('key1', value)
+        yield tap.Broadcast('key2', value)
         return 1
 
     def fn2(value):
-        yield tap.Send('key3', value)
-        yield tap.Send('key4', value)
+        yield tap.Broadcast('key3', value)
+        yield tap.Broadcast('key4', value)
         return 2
 
     def fn():

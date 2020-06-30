@@ -1,7 +1,7 @@
 from uuid import uuid4
 from collections import deque
 
-from tapystry import Call, Send, Receive, TapystryError
+from tapystry import Call, Broadcast, Receive, TapystryError
 
 class Lock():
     def __init__(self, name=None):
@@ -22,7 +22,7 @@ class Lock():
                 raise TapystryError(f"Yielded same lock release multiple times?  {self.name}")
             if len(self._q):
                 # use immediate=True to make sure receiving thread doesn't get canceled before the receive happens
-                yield Send(f"lock.{self._id}.{self._q[0]}", immediate=True)
+                yield Broadcast(f"lock.{self._id}.{self._q[0]}", immediate=True)
         Release = Call(release)
 
         def acquire():

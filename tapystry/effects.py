@@ -1,4 +1,4 @@
-from tapystry import Effect, Strand, Call, Send, Receive, CallFork, First, Cancel
+from tapystry import Effect, Strand, Call, Broadcast, Receive, CallFork, First, Cancel
 
 
 def Sequence(effects, name=None):

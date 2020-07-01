@@ -58,7 +58,7 @@ def test_lock_hang():
         tap.run(fn)
     # TODO fix
     assert str(x.value).startswith("Hanging strands detected waiting for Receive(lock") or \
-        str(x.value).startswith("Hanging strands detected waiting for Call(acquire")
+        str(x.value).startswith("Hanging strands detected waiting for Call(Acquire")
 
 
 def test_release_twice():
@@ -143,7 +143,7 @@ def test_lock_cancel_after_acquire():
         tap.run(fn)
     # TODO fix
     assert str(x.value).startswith("Hanging strands detected waiting for Receive(lock") or \
-        str(x.value).startswith("Hanging strands detected waiting for Call(acquire")
+        str(x.value).startswith("Hanging strands detected waiting for Call(Acquire")
 
 
 def test_lock_cancel_mid_acquire_trickier():
@@ -251,7 +251,7 @@ def test_queues_block_put():
     assert a == 8
     # TODO fix
     assert str(x.value).startswith("Hanging strands detected waiting for Receive(get") or \
-        str(x.value).startswith("Hanging strands detected waiting for Call(put")
+        str(x.value).startswith("Hanging strands detected waiting for Call(Put")
 
 
 def test_queues_put_then_get():

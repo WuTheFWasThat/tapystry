@@ -1,7 +1,7 @@
 from uuid import uuid4
 from collections import deque
 
-from tapystry import Call, Broadcast, Receive, TapystryError
+from tapystry import Call, Broadcast, Receive, TapystryError, as_effect
 
 """
 TODO: have something like a Promise?
@@ -35,7 +35,7 @@ class Lock():
         self.name = name or ""
         self._counter = 0
 
-    # TODO: make decorators for wrapping in call
+    @as_effect()
     def Acquire(self):
         acquire_id = self._counter
         self._counter += 1
@@ -43,22 +43,20 @@ class Lock():
         def remove():
             self._q.remove(acquire_id)
 
-        def release():
+        @Call
+        def Release():
             if not len(self._q) or acquire_id != self._q.popleft():
                 raise TapystryError(f"Yielded same lock release multiple times?  {self.name}")
             if len(self._q):
                 # use immediate=True to make sure receiving thread doesn't get canceled before the receive happens
                 yield Broadcast(f"lock.{self._id}.{self._q[0]}", immediate=True)
-        Release = Call(release)
 
-        def acquire():
-            if len(self._q) > 0:
-                self._q.append(acquire_id)
-                yield Receive(f"lock.{self._id}.{acquire_id}", oncancel=remove)
-            else:
-                self._q.append(acquire_id)
-            return Release
-        return Call(acquire)
+        if len(self._q) > 0:
+            self._q.append(acquire_id)
+            yield Receive(f"lock.{self._id}.{acquire_id}", oncancel=remove)
+        else:
+            self._q.append(acquire_id)
+        return Release
 
 
 class Queue():
@@ -79,6 +77,7 @@ class Queue():
         self._puts = deque()
         self._counter = 0
 
+    @as_effect()
     def Put(self, item):
         put_id = self._counter
         self._counter += 1
@@ -86,19 +85,18 @@ class Queue():
         def remove():
             self._puts.remove(put_id)
 
-        def put():
-            if len(self._gets):
-                assert not len(self._puts)
-                get_id = self._gets.popleft()
-                yield Broadcast(f"put.{self._id}.{get_id}", item, immediate=True)
-            else:
-                # always actually add item
-                self._buffer.append(item)
-                if self._buffer_size >= 0 and len(self._buffer) > self._buffer_size:
-                    self._puts.append(put_id)
-                    yield Receive(f"get.{self._id}.{put_id}", oncancel=remove)
-        return Call(put)
+        if len(self._gets):
+            assert not len(self._puts)
+            get_id = self._gets.popleft()
+            yield Broadcast(f"put.{self._id}.{get_id}", item, immediate=True)
+        else:
+            # always actually add item
+            self._buffer.append(item)
+            if self._buffer_size >= 0 and len(self._buffer) > self._buffer_size:
+                self._puts.append(put_id)
+                yield Receive(f"get.{self._id}.{put_id}", oncancel=remove)
 
+    @as_effect()
     def Get(self):
         get_id = self._counter
         self._counter += 1
@@ -106,14 +104,12 @@ class Queue():
         def remove():
             self._gets.remove(get_id)
 
-        def get():
-            if len(self._buffer):
-                if len(self._puts):
-                    put_id = self._puts.popleft()
-                    yield Broadcast(f"get.{self._id}.{put_id}", immediate=True)
-                item = self._buffer.popleft()
-            else:
-                self._gets.append(get_id)
-                item = yield Receive(f"put.{self._id}.{get_id}", oncancel=remove)
-            return item
-        return Call(get)
+        if len(self._buffer):
+            if len(self._puts):
+                put_id = self._puts.popleft()
+                yield Broadcast(f"get.{self._id}.{put_id}", immediate=True)
+            item = self._buffer.popleft()
+        else:
+            self._gets.append(get_id)
+            item = yield Receive(f"put.{self._id}.{get_id}", oncancel=remove)
+        return item

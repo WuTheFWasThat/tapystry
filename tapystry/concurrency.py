@@ -75,6 +75,7 @@ class Queue():
         self._gets = deque()
         # queue of puts (if queue is full)
         self._puts = deque()
+        self._put_vals = dict()
         self._counter = 0
 
     @as_effect()
@@ -84,17 +85,20 @@ class Queue():
 
         def remove():
             self._puts.remove(put_id)
+            self._put_vals.pop(put_id)
 
         if len(self._gets):
             assert not len(self._puts)
             get_id = self._gets.popleft()
             yield Broadcast(f"put.{self._id}.{get_id}", item, immediate=True)
         else:
-            # always actually add item
-            self._buffer.append(item)
-            if self._buffer_size >= 0 and len(self._buffer) > self._buffer_size:
+            if self._buffer_size >= 0 and len(self._buffer) >= self._buffer_size:
+                assert len(self._buffer) == self._buffer_size
                 self._puts.append(put_id)
+                self._put_vals[put_id] = item
                 yield Receive(f"get.{self._id}.{put_id}", oncancel=remove)
+            else:
+                self._buffer.append(item)
 
     @as_effect()
     def Get(self):
@@ -105,10 +109,11 @@ class Queue():
             self._gets.remove(get_id)
 
         if len(self._buffer):
+            item = self._buffer.popleft()
             if len(self._puts):
                 put_id = self._puts.popleft()
+                self._buffer.append(self._put_vals.pop(put_id))
                 yield Broadcast(f"get.{self._id}.{put_id}", immediate=True)
-            item = self._buffer.popleft()
         else:
             self._gets.append(get_id)
             item = yield Receive(f"put.{self._id}.{get_id}", oncancel=remove)

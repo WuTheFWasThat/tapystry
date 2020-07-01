@@ -255,6 +255,21 @@ def test_queues_block_put():
 
 
 def test_queues_put_then_get():
+    q = tap.Queue(buffer_size=2)
+
+    def fn():
+        # we have buffer so a put is fine
+        yield q.Put(3)
+        yield q.Put(5)
+        assert (yield q.Get()) == 3
+        assert (yield q.Get()) == 5
+        yield q.Put(3)
+        yield q.Put(5)
+
+    tap.run(fn)
+
+
+def test_queues_put_then_get_late_cancel():
     q = tap.Queue(buffer_size=1)
 
     def put(x):
@@ -267,8 +282,34 @@ def test_queues_put_then_get():
         yield tap.Sleep(0)
         assert (yield q.Get()) == 3
         assert (yield q.Get()) == 5
+        yield tap.Cancel(t2)  # too late
         assert (yield q.Get()) == 7
-        yield tap.Join([t1, t2])
+        yield tap.Join([t1])
+
+        t = yield tap.Fork(q.Get())
+        yield q.Put(3)
+        assert (yield tap.Join(t)) == 3
+
+    tap.run(fn)
+
+
+def test_queues_put_then_get_cancel():
+    q = tap.Queue(buffer_size=1)
+
+    def put(x):
+        yield q.Put(x)
+
+    def fn():
+        yield q.Put(3)
+        t1 = yield tap.CallFork(put, (5,))
+        t2 = yield tap.CallFork(put, (7,))
+        t3 = yield tap.CallFork(put, (9,))
+        yield tap.Sleep(0)
+        assert (yield q.Get()) == 3
+        yield tap.Cancel(t2)  # not too late to cancel
+        assert (yield q.Get()) == 5
+        assert (yield q.Get()) == 9
+        yield tap.Join([t1, t3])
 
         t = yield tap.Fork(q.Get())
         yield q.Put(3)

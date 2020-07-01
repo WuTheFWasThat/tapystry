@@ -269,6 +269,18 @@ def test_queues_put_then_get():
     tap.run(fn)
 
 
+def test_queues_put_then_get_no_buffer():
+    q = tap.Queue(buffer_size=0)
+
+    def fn():
+        # we have buffer so a put is fine
+        t = yield tap.Fork(q.Put(3))
+        assert (yield q.Get()) == 3
+        yield tap.Join(t)
+
+    tap.run(fn)
+
+
 def test_queues_put_then_get_late_cancel():
     q = tap.Queue(buffer_size=1)
 

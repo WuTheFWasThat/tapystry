@@ -114,6 +114,11 @@ class Queue():
                 put_id = self._puts.popleft()
                 self._buffer.append(self._put_vals.pop(put_id))
                 yield Broadcast(f"get.{self._id}.{put_id}", immediate=True)
+        elif len(self._puts):
+            assert self._buffer_size == 0
+            put_id = self._puts.popleft()
+            item = self._put_vals.pop(put_id)
+            yield Broadcast(f"get.{self._id}.{put_id}", immediate=True)
         else:
             self._gets.append(get_id)
             item = yield Receive(f"put.{self._id}.{get_id}", oncancel=remove)

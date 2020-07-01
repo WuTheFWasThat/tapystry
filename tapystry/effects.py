@@ -1,4 +1,4 @@
-from tapystry import Effect, Strand, Call, Broadcast, Receive, CallFork, First, Cancel
+from tapystry import Effect, Strand, Call, Broadcast, Receive, CallFork, First, Cancel, TapystryError
 
 
 def Sequence(effects, name=None):
@@ -18,7 +18,8 @@ def Sequence(effects, name=None):
                     result = yield effect
                 results.append(result)
         else:
-            assert isinstance(effects, dict)
+            if not isinstance(effects, dict):
+                raise TapystryError(f"Input to Sequence should be an Effect")
             results = dict()
             for k, effect in effects.items():
                 if isinstance(effect, (list, dict)):
@@ -45,7 +46,8 @@ def Join(strands, name=None):
             vals = yield Sequence([Join(v, name=name) for v in strands])
             return vals
         else:
-            assert isinstance(strands, dict), strands
+            if not isinstance(strands, dict):
+                raise TapystryError(f"Input to Join should be a Strand (or nested list/dict of them): {strands}")
             vals = yield Sequence({k: Join(v, name=name) for k, v in strands.items()})
             return vals
 
@@ -67,7 +69,8 @@ def Fork(effects):
         elif isinstance(effects, list):
             return [fork_effects(v) for v in effects]
         else:
-            assert isinstance(effects, dict)
+            if not isinstance(effects, dict):
+                raise TapystryError(f"Input to Fork should be an Effect (or nested list/dict of them): {effects}")
             return {k: fork_effects(v) for k, v in effects.items()}
 
     return Sequence(fork_effects(effects))
@@ -82,7 +85,8 @@ def Race(effects, name=None):
             keys = list(range(len(effects)))
             effects_array = effects
         else:
-            assert isinstance(effects, dict)
+            if not isinstance(effects, dict):
+                raise TapystryError(f"Input to Race should be an Effect (or nested list/dict of them): {effects}")
             keys, effects_array = zip(*effects.items())
         strands = []
         for key, effect in zip(keys, effects_array):
@@ -104,7 +108,8 @@ def Subscribe(message_key, fn, predicate=None, leading_only=False, latest_only=F
     If leading_only is True, then we don't start new calls to fn while old ones are running (like takeLeading)
     If latest_only is True, then we cancel old calls to make way for new calls (like takeLatest)
     """
-    assert not (leading_only and latest_only)
+    if leading_only and latest_only:
+        raise TapystryError(f"Subscribe cannot set both leading_only and latest_only")
 
     def subscribe():
         task = None

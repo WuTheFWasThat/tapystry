@@ -18,13 +18,24 @@ reem suggests just running an asyncio event loop to schedule ascynio futures
 """
 
 
+
 class Lock():
+    """
+    Like a traditional lock
+
+    Usage:
+        l = Lock()
+        release = yield l.Acquire()
+        ...
+        yield release
+    """
     def __init__(self, name=None):
         self._id = uuid4()
         self._q = deque()
         self.name = name or ""
         self._counter = 0
 
+    # TODO: make decorators for wrapping in call
     def Acquire(self):
         acquire_id = self._counter
         self._counter += 1
@@ -48,3 +59,61 @@ class Lock():
                 self._q.append(acquire_id)
             return Release
         return Call(acquire)
+
+
+class Queue():
+    """
+    A queue of items.
+    Each item can only be taken once.
+
+    A buffer_size value of -1 indicates no limit
+    """
+    def __init__(self, name=None, buffer_size=0):
+        self._id = uuid4()
+        self._buffer_size = buffer_size
+        self.name = name or ""
+        self._buffer = deque()
+        # queue of gets (if queue is empty)
+        self._gets = deque()
+        # queue of puts (if queue is full)
+        self._puts = deque()
+        self._counter = 0
+
+    def Put(self, item):
+        put_id = self._counter
+        self._counter += 1
+
+        def remove():
+            self._puts.remove(put_id)
+
+        def put():
+            if len(self._gets):
+                assert not len(self._puts)
+                get_id = self._gets.popleft()
+                yield Broadcast(f"put.{self._id}.{get_id}", item, immediate=True)
+            else:
+                # always actually add item
+                self._buffer.append(item)
+                if self._buffer_size >= 0 and len(self._buffer) > self._buffer_size:
+                    self._puts.append(put_id)
+                    yield Receive(f"get.{self._id}.{put_id}", oncancel=remove)
+        return Call(put)
+
+    def Get(self):
+        get_id = self._counter
+        self._counter += 1
+
+        def remove():
+            self._gets.remove(get_id)
+
+        def get():
+            if len(self._buffer):
+                if len(self._puts):
+                    put_id = self._puts.popleft()
+                    yield Broadcast(f"get.{self._id}.{put_id}", immediate=True)
+                item = self._buffer.popleft()
+            else:
+                self._gets.append(get_id)
+                item = yield Receive(f"put.{self._id}.{get_id}", oncancel=remove)
+            return item
+        return Call(get)

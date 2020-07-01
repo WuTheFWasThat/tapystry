@@ -195,3 +195,83 @@ def test_lock_cancel_mid_acquire_trickier():
     tap.run(fn)
 
 
+def test_queues_get_then_put():
+    q = tap.Queue(buffer_size=1)
+    a = 0
+
+    def pop_and_add():
+        nonlocal a
+        b = yield q.Get()
+        a += b
+
+    def fn():
+        t1 = yield tap.CallFork(pop_and_add)
+        t2 = yield tap.CallFork(pop_and_add)
+        t3 = yield tap.CallFork(pop_and_add)
+        yield tap.Sleep(0)
+        assert a == 0
+        yield q.Put(3)
+        assert a == 3
+
+        yield tap.Cancel(t2)
+        yield q.Put(5)
+        assert a == 8
+
+        yield q.Put(5)
+        assert a == 8
+
+        t4 = yield tap.CallFork(pop_and_add)
+        yield tap.Sleep(0)
+        assert a == 13
+
+        yield tap.Join([t1, t3, t4])
+
+    tap.run(fn)
+
+
+def test_queues_block_put():
+    q = tap.Queue(buffer_size=1)
+    a = 0
+
+    def pop_and_add():
+        nonlocal a
+        b = yield q.Get()
+        a += b
+
+    def fn():
+        yield tap.CallFork(pop_and_add)
+        yield tap.CallFork(pop_and_add)
+        yield q.Put(3)
+        yield q.Put(5)
+        yield q.Put(5)
+        yield q.Put(8)
+
+    with pytest.raises(tap.TapystryError) as x:
+        tap.run(fn)
+    assert a == 8
+    # TODO fix
+    assert str(x.value).startswith("Hanging strands detected waiting for Receive(get") or \
+        str(x.value).startswith("Hanging strands detected waiting for Call(put")
+
+
+def test_queues_put_then_get():
+    q = tap.Queue(buffer_size=1)
+
+    def put(x):
+        yield q.Put(x)
+
+    def fn():
+        yield q.Put(3)
+        t1 = yield tap.CallFork(put, (5,))
+        t2 = yield tap.CallFork(put, (7,))
+        yield tap.Sleep(0)
+        assert (yield q.Get()) == 3
+        assert (yield q.Get()) == 5
+        assert (yield q.Get()) == 7
+        yield tap.Join([t1, t2])
+
+        t = yield tap.Fork(q.Get())
+        yield q.Put(3)
+        assert (yield tap.Join(t)) == 3
+
+    tap.run(fn)

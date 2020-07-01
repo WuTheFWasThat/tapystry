@@ -3,6 +3,21 @@ from collections import deque
 
 from tapystry import Call, Broadcast, Receive, TapystryError
 
+"""
+TODO: have something like a Promise?
+
+def doStuffWithPromise(p):
+    ...
+    yield p.Resolve(val)
+
+p = Promise()
+yield Fork(doStuffWithPromise, (p,))
+yield p
+
+reem suggests just running an asyncio event loop to schedule ascynio futures
+"""
+
+
 class Lock():
     def __init__(self, name=None):
         self._id = uuid4()

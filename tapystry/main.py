@@ -1,3 +1,4 @@
+import inspect
 import abc
 from collections import defaultdict, deque
 from uuid import uuid4
@@ -13,11 +14,15 @@ class Effect(metaclass=abc.ABCMeta):
         self.type = type
         self.cancel = oncancel
         self.name = name
+        self._stack = inspect.stack()
 
     def __str__(self):
         if self.name is not None:
             return f"{self.type}({self.name})"
         return f"{self.type}"
+
+    def stack(self):
+        return str(self._stack)
 
 
 class Broadcast(Effect):
@@ -355,7 +360,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
             print(f"Handling {effect} (from {item.strand})")
 
         if not isinstance(effect, Effect):
-            raise TapystryError(f"Strand yielded non-effect {type(effect)}")
+            raise TapystryError(f"Strand yielded non-effect {type(effect)}: {effect.stack()}")
 
         if isinstance(effect, Broadcast):
             resolve_waiting("broadcast." + effect.key, effect.value)
@@ -386,7 +391,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
         elif isinstance(effect, Sleep):
             advance_strand(item.strand)
         else:
-            raise TapystryError(f"Unhandled effect type {type(effect)}")
+            raise TapystryError(f"Unhandled effect type {type(effect)}: {effect.stack()}")
 
     for strand in hanging_strands:
         if not strand.is_canceled():

@@ -171,6 +171,7 @@ class _QueueItem():
         self.wake_time = wake_time
 
 
+
 def run(gen, args=(), kwargs=None, debug=False):
     # dict from string to waiting functions
     waiting = defaultdict(list)
@@ -178,6 +179,7 @@ def run(gen, args=(), kwargs=None, debug=False):
     # TODO: gc hanging strands
     hanging_strands = set()
     q = deque()
+    effect_types_counts = defaultdict(int)
     initial_strand = Strand(gen, args, kwargs)
     if initial_strand.is_done():
         # wasn't even a generator
@@ -186,6 +188,7 @@ def run(gen, args=(), kwargs=None, debug=False):
     def queue_effect(effect, strand):
         if not isinstance(effect, Effect):
             raise TapystryError(f"Strand yielded non-effect {type(effect)}")
+        effect_types_counts[effect.type] += 1
         if isinstance(effect, Broadcast):
             if effect.immediate:
                 q.append(_QueueItem(effect, strand))
@@ -262,9 +265,17 @@ def run(gen, args=(), kwargs=None, debug=False):
 
     advance_strand(initial_strand)
     while len(q):
+        min_wake_time = min([item.wake_time or 0 for item in q])
+        t = time.time()
+        if min_wake_time > t:
+            time.sleep(min_wake_time - t)
         item = q.pop()
+        effect_types_counts[item.effect.type] -= 1
+        assert effect_types_counts[item.effect.type] >= 0
+
         if item.wake_time is not None and item.wake_time > time.time():
             q.appendleft(item)
+            effect_types_counts[item.effect.type] += 1
             continue
 
         if item.strand.is_canceled():

@@ -10,19 +10,18 @@ class Effect(metaclass=abc.ABCMeta):
     """
     Base class for effects which can be yielded to the tapystry event loop.
     """
-    def __init__(self, type, oncancel=(lambda: None), name=None):
+    def __init__(self, type, oncancel=(lambda: None), name=None, caller=None):
         self.type = type
         self.cancel = oncancel
         self.name = name
-        self._stack = inspect.stack()
+        if caller is None:
+            caller = inspect.stack()[2]
+        self._caller = caller
 
     def __str__(self):
         if self.name is not None:
             return f"{self.type}({self.name})"
         return f"{self.type}"
-
-    def stack(self):
-        return str(self._stack)
 
 
 class Broadcast(Effect):
@@ -139,7 +138,7 @@ _noval = object()
 
 
 class Strand():
-    def __init__(self, gen, args=(), kwargs=None, parent=None):
+    def __init__(self, caller, gen, args=(), kwargs=None, parent=None):
         if kwargs is None:
             kwargs = dict()
         self._it = gen(*args, **kwargs)
@@ -154,6 +153,7 @@ class Strand():
             self._result = self._it
             self._done = True
         self._effect = None
+        self._caller = caller
 
     def send(self, value=None):
         assert not self._canceled
@@ -167,6 +167,8 @@ class Strand():
             self._result = e.value
             self._effect = None
             return dict(done=True)
+        except Exception as e:
+            raise TapystryError(f"Exception caught at\n{self.stack()}\n{type(e).__name__}: {e}")
 
     def __hash__(self):
         return self.id.int
@@ -175,12 +177,28 @@ class Strand():
         return f"Strand[{self.id.hex}] (waiting for {self._effect})"
 
     def stack(self):
+        # if self._parent is None:
+        #     return [f"Strand[{self.id.hex}]"]
+        # else:
+        #     stack = list(self._parent[0].stack())
+        #     stack.append(f"{self._parent[1]} Strand[{self.id.hex}]")
+        #     return stack
+
+        s = "\n".join([
+            f"File {self._caller[1]}, line {self._caller[2]}, in {self._caller[3]}",
+            f"  {self._caller[4][0].strip()}",
+        ])
         if self._parent is None:
-            return [f"Strand[{self.id.hex}]"]
+            return s
         else:
-            stack = list(self._parent[0].stack())
-            stack.append(f"{self._parent[1]} Strand[{self.id.hex}]")
-            return stack
+            return "\n".join([self._parent[0].stack(), s])
+
+        # print(self._stack[2][0])
+        # print(self._stack[2][1])  # file
+        # print(self._stack[2][2])  # line
+        # print(self._stack[2][3])  # name
+        # print(self._stack[2][4])  # code
+
 
     def is_done(self):
         return self._done
@@ -229,7 +247,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
     # list of intercept items
     intercepts = []
 
-    initial_strand = Strand(gen, args, kwargs)
+    initial_strand = Strand(inspect.stack()[1], gen, args, kwargs)
     if initial_strand.is_done():
         # wasn't even a generator
         return initial_strand.get_result()
@@ -360,7 +378,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
             print(f"Handling {effect} (from {item.strand})")
 
         if not isinstance(effect, Effect):
-            raise TapystryError(f"Strand yielded non-effect {type(effect)}: {effect.stack()}")
+            raise TapystryError(f"Strand yielded non-effect {type(effect)}")
 
         if isinstance(effect, Broadcast):
             resolve_waiting("broadcast." + effect.key, effect.value)
@@ -368,7 +386,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
         elif isinstance(effect, Receive):
             add_waiting_strand("broadcast." + effect.key, item.strand, effect.predicate)
         elif isinstance(effect, Call):
-            strand = Strand(effect.gen, effect.args, effect.kwargs, parent=(item.strand, effect.name or "call"))
+            strand = Strand(effect._caller, effect.gen, effect.args, effect.kwargs, parent=(item.strand, effect.name or "call"))
             item.strand._children.append(strand)
             if strand.is_done():
                 # wasn't even a generator
@@ -377,7 +395,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
                 add_waiting_strand("done." + strand.id.hex, item.strand)
                 advance_strand(strand)
         elif isinstance(effect, CallFork):
-            fork_strand = Strand(effect.gen, effect.args, effect.kwargs, parent=(item.strand, effect.name or "fork"))
+            fork_strand = Strand(effect._caller, effect.gen, effect.args, effect.kwargs, parent=(item.strand, effect.name or "fork"))
             item.strand._children.append(fork_strand)
             advance_strand(item.strand, fork_strand)
             if not fork_strand.is_done():

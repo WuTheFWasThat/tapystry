@@ -74,7 +74,10 @@ def test_release_twice():
 
     with pytest.raises(tap.TapystryError) as x:
         tap.run(fn)
-    assert str(x.value).startswith("Yielded same lock release multiple times?")
+    assert str(x.value).startswith("Exception caught at")
+    assert str(x.value).count("in test_release_twice\n") == 1
+    assert str(x.value).count("in Acquire\n") == 1
+    assert str(x.value).count("Yielded same lock release multiple times?") == 1
 
 
 def test_create_acquires_out_of_order():

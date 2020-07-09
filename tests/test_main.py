@@ -349,3 +349,30 @@ def test_intercept():
         return value
 
     assert tap.run(fn, test_mode=True) == "real"  # got intercepted
+
+
+def test_error_stack():
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
+
+    def receiver():
+        value = yield tap.Receive('key')
+        if value < 10:
+            broadcast_strand = yield tap.CallFork(broadcaster, (value + 1,))
+            receive_strand = yield tap.CallFork(receiver)
+            yield tap.Join([broadcast_strand, receive_strand])
+        raise Exception("too large")
+        return value
+
+    def fn():
+        # fork in apparently wrong order!
+        broadcast_strand = yield tap.CallFork(broadcaster, (5,))
+        recv_strand = yield tap.CallFork(receiver)
+        yield tap.Join(broadcast_strand)
+        value = yield tap.Join(recv_strand)
+        return value
+
+    with pytest.raises(tap.TapystryError) as x:
+        tap.run(fn)
+    assert str(x.value).startswith("Exception caught at")
+    assert str(x.value).count(", in receiver\n") == 5

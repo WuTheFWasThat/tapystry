@@ -313,3 +313,38 @@ def test_sleep():
         assert time.time() - t < 0.01
 
     tap.run(fn)
+
+
+def test_intercept_nontest():
+    def fn():
+        yield tap.Intercept()
+
+    with pytest.raises(tap.TapystryError) as x:
+        tap.run(fn)
+    assert str(x.value).startswith("Cannot intercept outside of test mode")
+
+
+def test_intercept():
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
+
+    def receiver():
+        value = yield tap.Receive('key')
+        return value
+
+    def intercepter():
+        effect = yield tap.Intercept(lambda e: isinstance(e, tap.Receive), "real")
+        assert effect.key == "key"
+
+    def fn():
+        intercept_strand = yield tap.CallFork(intercepter)
+        recv_strand = yield tap.CallFork(receiver)
+        # even though this is forked, it doesn't end up hanging
+        broadcast_strand = yield tap.CallFork(broadcaster, (5,))
+        value = yield tap.Join(recv_strand)
+        assert value == "real"  # got intercepted
+        yield tap.Join(intercept_strand)
+        yield tap.Cancel(broadcast_strand)
+        return value
+
+    assert tap.run(fn, test_mode=True) == "real"  # got intercepted

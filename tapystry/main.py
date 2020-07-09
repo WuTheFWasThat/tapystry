@@ -113,6 +113,20 @@ class Sleep(Effect):
         super().__init__(type="Sleep", name=name, **effect_kwargs)
 
 
+class Intercept(Effect):
+    """
+    Effect which waits until the engine finds an effect matching the given predicate, and modifies the yielded value of that effect.
+    This is intended for testing only, and can only be used in test_mode.
+    The tapystry engine returns the effect found.
+    """
+    def __init__(self, predicate=None, value=None, name=None, **effect_kwargs):
+        self.predicate = predicate
+        self.value = value
+        if name is None:
+            name = ""
+        super().__init__(type="Intercept", name=name, **effect_kwargs)
+
+
 class TapystryError(Exception):
     pass
 
@@ -200,13 +214,17 @@ class _QueueItem():
         self.wake_time = wake_time
 
 
-def run(gen, args=(), kwargs=None, debug=False):
+def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
     # dict from string to waiting functions
     waiting = defaultdict(list)
     # dict from strand to waiting key
     # TODO: gc hanging strands
     hanging_strands = set()
     q = deque()
+
+    # list of intercept items
+    intercepts = []
+
     initial_strand = Strand(gen, args, kwargs)
     if initial_strand.is_done():
         # wasn't even a generator
@@ -292,6 +310,28 @@ def run(gen, args=(), kwargs=None, debug=False):
     while len(q):
         item = q.pop()
 
+        effect = item.effect
+        if isinstance(effect, Intercept):
+            if not test_mode:
+                raise TapystryError(f"Cannot intercept outside of test mode!")
+            intercepts.append(item)
+            hanging_strands.add(item.strand)
+            continue
+
+        if test_mode:
+            intercepted = False
+            for intercept_item in intercepts:
+                intercept_effect = intercept_item.effect
+                if intercept_effect.predicate is None or intercept_effect.predicate(effect):
+                    intercepted = True
+                    break
+            if intercepted:
+                hanging_strands.remove(intercept_item.strand)
+                advance_strand(intercept_item.strand, effect)
+                advance_strand(item.strand, intercept_effect.value)
+                intercepts.remove(intercept_item)
+                continue
+
         if item.wake_time is not None and item.wake_time > time.time():
             q.appendleft(item)
 
@@ -305,7 +345,7 @@ def run(gen, args=(), kwargs=None, debug=False):
 
         if item.strand.is_canceled():
             continue
-        effect = item.effect
+
         if debug:
             print(f"Handling {effect} (from {item.strand})")
 

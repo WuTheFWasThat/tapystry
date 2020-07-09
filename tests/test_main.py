@@ -374,5 +374,6 @@ def test_error_stack():
 
     with pytest.raises(tap.TapystryError) as x:
         tap.run(fn)
+    # print(x.value)
     assert str(x.value).startswith("Exception caught at")
-    assert str(x.value).count(", in receiver\n") == 5
+    assert str(x.value).count(", in receiver\n") == 6

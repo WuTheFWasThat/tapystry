@@ -153,6 +153,12 @@ class Strand():
             self._result = self._it
             self._done = True
         self._effect = None
+        if self._parent is None:
+            self._parent_effect = None
+        else:
+            self._parent_effect = self._parent[0]._effect
+            assert self._parent_effect is not None
+
         self._caller = caller
 
     def send(self, value=None):
@@ -168,7 +174,19 @@ class Strand():
             self._effect = None
             return dict(done=True)
         except Exception as e:
-            raise TapystryError(f"Exception caught at\n{self.stack()}\n{type(e).__name__}: {e}")
+            tb = e.__traceback__.tb_next
+            line = tb.tb_lineno
+            # line = tb.tb_frame.f_code.co_firstlineno
+            # line number is not exactly right?
+            raise TapystryError(
+                "\n".join([
+                    f"Exception caught at",
+                    f"{self.stack()}",
+                    f":",
+                    f"File {tb.tb_frame.f_code.co_filename}, line {line}, in {tb.tb_frame.f_code.co_name}",
+                    f"{type(e).__name__}: {e}",
+                ])
+            )
 
     def __hash__(self):
         return self.id.int
@@ -191,7 +209,11 @@ class Strand():
         if self._parent is None:
             return s
         else:
-            return "\n".join([self._parent[0].stack(), s])
+            return "\n".join([
+                self._parent[0].stack(),
+                f"Yields effect {self._parent_effect}, created at",
+                s
+            ])
 
         # print(self._stack[2][0])
         # print(self._stack[2][1])  # file
@@ -409,7 +431,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
         elif isinstance(effect, Sleep):
             advance_strand(item.strand)
         else:
-            raise TapystryError(f"Unhandled effect type {type(effect)}: {effect.stack()}")
+            raise TapystryError(f"Unhandled effect type {type(effect)}: {item.strand.stack()}")
 
     for strand in hanging_strands:
         if not strand.is_canceled():

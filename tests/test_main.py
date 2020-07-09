@@ -333,8 +333,9 @@ def test_intercept():
         return value
 
     def intercepter():
-        effect = yield tap.Intercept(lambda e: isinstance(e, tap.Receive), "real")
+        (effect, inject) = yield tap.Intercept(lambda e: isinstance(e, tap.Receive))
         assert effect.key == "key"
+        yield inject("real")
 
     def fn():
         intercept_strand = yield tap.CallFork(intercepter)

@@ -115,13 +115,12 @@ class Sleep(Effect):
 
 class Intercept(Effect):
     """
-    Effect which waits until the engine finds an effect matching the given predicate, and modifies the yielded value of that effect.
+    Effect which waits until the engine finds an effect matching the given predicate, and allows you to modify the yielded value of that effect.
     This is intended for testing only, and can only be used in test_mode.
-    The tapystry engine returns the effect found.
+    The tapystry engine returns a tuple of (effect, inject), where `effect` is the effect intercepted, and `inject` is a function taking a value, and returning an effect that yields that value for the intercepted effect.
     """
-    def __init__(self, predicate=None, value=None, name=None, **effect_kwargs):
+    def __init__(self, predicate=None, name=None, **effect_kwargs):
         self.predicate = predicate
-        self.value = value
         if name is None:
             name = ""
         super().__init__(type="Intercept", name=name, **effect_kwargs)
@@ -306,6 +305,12 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
         # clear first in case it mutates
         waiting[wait_key] = [fn for fn in fns if not fn(value)]
 
+    def make_injector(intercepted_strand):
+        def inject(value):
+            advance_strand(intercepted_strand, value)
+            hanging_strands.remove(intercepted_strand)
+        return lambda x: Call(inject, (x,))
+
     advance_strand(initial_strand)
     while len(q):
         item = q.pop()
@@ -327,9 +332,9 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
                     break
             if intercepted:
                 hanging_strands.remove(intercept_item.strand)
-                advance_strand(intercept_item.strand, effect)
-                advance_strand(item.strand, intercept_effect.value)
                 intercepts.remove(intercept_item)
+                hanging_strands.add(item.strand)
+                advance_strand(intercept_item.strand, (effect, make_injector(item.strand)))
                 continue
 
         if item.wake_time is not None and item.wake_time > time.time():

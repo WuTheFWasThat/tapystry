@@ -6,6 +6,9 @@ import time
 
 
 class Effect(metaclass=abc.ABCMeta):
+    """
+    Base class for effects which can be yielded to the tapystry event loop.
+    """
     def __init__(self, type, oncancel=(lambda: None), name=None):
         self.type = type
         self.cancel = oncancel
@@ -18,6 +21,9 @@ class Effect(metaclass=abc.ABCMeta):
 
 
 class Broadcast(Effect):
+    """
+    Effect which broadcasts a message for all strands to hear
+    """
     def __init__(self, key, value=None, name=None, immediate=False, **effect_kwargs):
         self.key = key
         self.value = value
@@ -28,6 +34,10 @@ class Broadcast(Effect):
 
 
 class Receive(Effect):
+    """
+    Effect which waits until it hears a broadcast at the specified key, with value satisfying the specified predicate.
+    The tapystry engine returns the matched message's value
+    """
     def __init__(self, key, predicate=None, name=None, **effect_kwargs):
         self.key = key
         self.predicate = predicate
@@ -37,6 +47,10 @@ class Receive(Effect):
 
 
 class Call(Effect):
+    """
+    Effect which spins up a new strand by calling generator on the specified arguments,
+    The tapystry engine returns the generator's return value
+    """
     def __init__(self, gen, args=(), kwargs=None, name=None, **effect_kwargs):
         self.gen = gen
         self.args = args
@@ -47,6 +61,10 @@ class Call(Effect):
 
 
 class CallFork(Effect):
+    """
+    Effect which spins up a new strand by calling generator on the specified arguments
+    The tapystry engine immediately returns a Strand object.
+    """
     def __init__(self, gen, args=(), kwargs=None, name=None, **effect_kwargs):
         self.gen = gen
         self.args = args
@@ -57,7 +75,12 @@ class CallFork(Effect):
 
 
 class First(Effect):
-    """NOTE: use of this can be dangerous, as it cancels losers"""
+    """
+    Effect which returns when one of the strands is done.
+    The tapystry engine returns the index of the winning strand, and its value.
+    NOTE: Use of this can be dangerous and can lead to deadlocks, as it cancels losers.
+          It is safer to us higher-level APIs such as Race and Join
+    """
     def __init__(self, strands, name=None, cancel_losers=True, **effect_kwargs):
         self.strands = strands
         self.cancel_losers = cancel_losers
@@ -69,6 +92,9 @@ class First(Effect):
 
 # TODO: does this really need to be an effect?  what's wrong with just exposing _canceled on Strand?
 class Cancel(Effect):
+    """
+    Effect which cancels the strand specified
+    """
     def __init__(self, strand, name=None, **effect_kwargs):
         self.strand = strand
         if name is None:
@@ -77,6 +103,9 @@ class Cancel(Effect):
 
 
 class Sleep(Effect):
+    """
+    Effect which sleeps the calling strand for the specified period of time
+    """
     def __init__(self, t, name=None, **effect_kwargs):
         self.t = t
         if name is None:

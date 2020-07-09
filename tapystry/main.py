@@ -259,12 +259,19 @@ def run(gen, args=(), kwargs=None, debug=False):
         # clear first in case it mutates
         waiting[wait_key] = [fn for fn in fns if not fn(value)]
 
-
     advance_strand(initial_strand)
     while len(q):
         item = q.pop()
+
         if item.wake_time is not None and item.wake_time > time.time():
             q.appendleft(item)
+
+            # actually sleep
+            min_wake_time = min([item.wake_time or 0 for item in q])
+            t = time.time()
+            if min_wake_time > t:
+                time.sleep(min_wake_time - t)
+
             continue
 
         if item.strand.is_canceled():

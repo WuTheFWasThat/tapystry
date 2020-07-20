@@ -130,6 +130,16 @@ class Intercept(Effect):
         super().__init__(type="Intercept", name=name, **effect_kwargs)
 
 
+class DebugTree(Effect):
+    """
+    Effect which returns the state of the entire tapystry engine
+    TODO: make the return value more structured (currently just a string)
+    """
+    def __init__(self, **effect_kwargs):
+        super().__init__(type="DebugTree", **effect_kwargs)
+
+
+
 class TapystryError(Exception):
     pass
 
@@ -138,7 +148,7 @@ _noval = object()
 
 
 class Strand():
-    def __init__(self, caller, gen, args=(), kwargs=None, parent=None):
+    def __init__(self, caller, gen, args=(), kwargs=None, *, parent):
         if kwargs is None:
             kwargs = dict()
         self._it = gen(*args, **kwargs)
@@ -194,6 +204,17 @@ class Strand():
     def __str__(self):
         return f"Strand[{self.id.hex}] (waiting for {self._effect})"
 
+    def _debuglines(self):
+        # print(self._stack[2][0])
+        # print(self._stack[2][1])  # file
+        # print(self._stack[2][2])  # line
+        # print(self._stack[2][3])  # name
+        # print(self._stack[2][4])  # code
+        return [
+            f"File {self._caller[1]}, line {self._caller[2]}, in {self._caller[3]}",
+            f"  {self._caller[4][0].strip()}",
+        ]
+
     def stack(self):
         # if self._parent is None:
         #     return [f"Strand[{self.id.hex}]"]
@@ -202,10 +223,7 @@ class Strand():
         #     stack.append(f"{self._parent[1]} Strand[{self.id.hex}]")
         #     return stack
 
-        s = "\n".join([
-            f"File {self._caller[1]}, line {self._caller[2]}, in {self._caller[3]}",
-            f"  {self._caller[4][0].strip()}",
-        ])
+        s = "\n".join(self._debuglines())
         if self._parent is None:
             return s
         else:
@@ -215,12 +233,16 @@ class Strand():
                 s
             ])
 
-        # print(self._stack[2][0])
-        # print(self._stack[2][1])  # file
-        # print(self._stack[2][2])  # line
-        # print(self._stack[2][3])  # name
-        # print(self._stack[2][4])  # code
+    def _treelines(self, indent=0):
+        lines = [" " * indent + line for line in self._debuglines()]
+        for c in self._children:
+            lines.extend(
+                c._treelines(indent + 2)
+            )
+        return lines
 
+    def tree(self):
+        return "\n".join(self._treelines())
 
     def is_done(self):
         return self._done
@@ -269,7 +291,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
     # list of intercept items
     intercepts = []
 
-    initial_strand = Strand(inspect.stack()[1], gen, args, kwargs)
+    initial_strand = Strand(inspect.stack()[1], gen, args, kwargs, parent=None)
     if initial_strand.is_done():
         # wasn't even a generator
         return initial_strand.get_result()
@@ -430,6 +452,8 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
             advance_strand(item.strand)
         elif isinstance(effect, Sleep):
             advance_strand(item.strand)
+        elif isinstance(effect, DebugTree):
+            advance_strand(item.strand, initial_strand.tree())
         else:
             raise TapystryError(f"Unhandled effect type {type(effect)}: {item.strand.stack()}")
 

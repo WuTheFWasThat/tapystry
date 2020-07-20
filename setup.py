@@ -3,7 +3,7 @@ from setuptools import setup
 setup(
     name="tapystry",
     packages=["tapystry"],
-    version="0.3.8",
+    version="0.3.9",
     author="Jeffrey Wu",
     install_requires=[
     ],

@@ -160,19 +160,13 @@ def test_lock_cancel_mid_acquire_trickier():
         release = yield lock.Acquire()
         nonlocal a
         a += 5
-        to_join = []
-        if to_cancel is not None:
-            t = yield tap.Fork(tap.Sequence([
-                tap.Receive(str(x)),
-                tap.Cancel(to_cancel),
-            ]))
-            to_join.append(t)
-        t = yield tap.Fork(tap.Sequence([
+        yield tap.Sequence([
             tap.Receive(str(x)),
-            release
-        ]))
-        to_join.append(t)
-        yield tap.Join(to_join)
+            tap.Sequence([
+                tap.Cancel(to_cancel),
+                release,
+            ]) if to_cancel is not None else release
+        ])
 
 
     def fn():

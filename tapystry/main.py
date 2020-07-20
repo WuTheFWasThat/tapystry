@@ -148,7 +148,7 @@ _noval = object()
 
 
 class Strand():
-    def __init__(self, caller, gen, args=(), kwargs=None, *, parent):
+    def __init__(self, caller, gen, args=(), kwargs=None, *, parent, edge=None):
         if kwargs is None:
             kwargs = dict()
         self._it = gen(*args, **kwargs)
@@ -157,7 +157,7 @@ class Strand():
         self.id = uuid4()
         self._canceled = False
         # self._error = None
-        self._children = []
+        self._live_children = []
         self._parent = parent
         if not isinstance(self._it, types.GeneratorType):
             self._result = self._it
@@ -165,9 +165,13 @@ class Strand():
         self._effect = None
         if self._parent is None:
             self._parent_effect = None
+            assert edge is None
         else:
-            self._parent_effect = self._parent[0]._effect
+            self._parent._live_children.append(self)
+            self._parent_effect = self._parent._effect
+            self._edge = edge
             assert self._parent_effect is not None
+            assert self._edge is not None
 
         self._caller = caller
 
@@ -180,6 +184,8 @@ class Strand():
             return dict(done=False, effect=effect)
         except StopIteration as e:
             self._done = True
+            if self._parent is not None:
+                self._parent._live_children.remove(self)
             self._result = e.value
             self._effect = None
             return dict(done=True)
@@ -214,7 +220,7 @@ class Strand():
         # if self._parent is None:
         #     return [f"Strand[{self.id.hex}]"]
         # else:
-        #     stack = list(self._parent[0].stack())
+        #     stack = list(self._parent.stack())
         #     stack.append(f"{self._parent[1]} Strand[{self.id.hex}]")
         #     return stack
 
@@ -223,14 +229,14 @@ class Strand():
             return s
         else:
             return "\n".join([
-                self._parent[0].stack(),
+                self._parent.stack(),
                 f"Yields effect {self._parent_effect}, created at",
                 s
             ])
 
     def _treelines(self, indent=0):
         lines = [" " * indent + line for line in self._debuglines()]
-        for c in self._children:
+        for c in self._live_children:
             lines.extend(
                 c._treelines(indent + 2)
             )
@@ -251,7 +257,7 @@ class Strand():
         # if self._done:  ??
         if self._effect is not None:
             self._effect.cancel()
-        for child in self._children:
+        for child in self._live_children:
             child.cancel()
         self._canceled = True
 
@@ -425,8 +431,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
         elif isinstance(effect, Receive):
             add_waiting_strand("broadcast." + effect.key, item.strand, effect.predicate)
         elif isinstance(effect, Call):
-            strand = Strand(effect._caller, effect.gen, effect.args, effect.kwargs, parent=(item.strand, effect.name or "call"))
-            item.strand._children.append(strand)
+            strand = Strand(effect._caller, effect.gen, effect.args, effect.kwargs, parent=item.strand, edge=effect.name or "call")
             if strand.is_done():
                 # wasn't even a generator
                 advance_strand(item.strand, strand.get_result())
@@ -434,8 +439,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
                 add_waiting_strand("done." + strand.id.hex, item.strand)
                 advance_strand(strand)
         elif isinstance(effect, CallFork):
-            fork_strand = Strand(effect._caller, effect.gen, effect.args, effect.kwargs, parent=(item.strand, effect.name or "fork"))
-            item.strand._children.append(fork_strand)
+            fork_strand = Strand(effect._caller, effect.gen, effect.args, effect.kwargs, parent=item.strand, edge=effect.name or "fork")
             advance_strand(item.strand, fork_strand)
             if not fork_strand.is_done():
                 # otherwise wasn't even a generator

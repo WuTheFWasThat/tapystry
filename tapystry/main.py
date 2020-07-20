@@ -10,12 +10,12 @@ class Effect(metaclass=abc.ABCMeta):
     """
     Base class for effects which can be yielded to the tapystry event loop.
     """
-    def __init__(self, type, oncancel=(lambda: None), name=None, caller=None):
+    def __init__(self, type, oncancel=(lambda: None), name=None, caller=None, caller_stack_index=2):
         self.type = type
         self.cancel = oncancel
         self.name = name
         if caller is None:
-            caller = inspect.stack()[2]
+            caller = inspect.stack()[caller_stack_index]
         self._caller = caller
 
     def __str__(self):
@@ -205,14 +205,9 @@ class Strand():
         return f"Strand[{self.id.hex}] (waiting for {self._effect})"
 
     def _debuglines(self):
-        # print(self._stack[2][0])
-        # print(self._stack[2][1])  # file
-        # print(self._stack[2][2])  # line
-        # print(self._stack[2][3])  # name
-        # print(self._stack[2][4])  # code
         return [
-            f"File {self._caller[1]}, line {self._caller[2]}, in {self._caller[3]}",
-            f"  {self._caller[4][0].strip()}",
+            f"File {self._caller.filename}, line {self._caller.lineno}, in {self._caller.function}",
+            f"  {self._caller.code_context[0].strip()}",
         ]
 
     def stack(self):

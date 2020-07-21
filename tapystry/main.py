@@ -91,7 +91,7 @@ class First(Effect):
         if name is None:
             name = ", ".join([str(x) for x in self.strands])
         self.name = name
-        super().__init__(type="Race", name=name, **effect_kwargs)
+        super().__init__(type="First", name=name, **effect_kwargs)
 
 
 # TODO: does this really need to be an effect?  what's wrong with just exposing _canceled on Strand?

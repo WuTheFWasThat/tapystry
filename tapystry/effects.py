@@ -1,4 +1,6 @@
-from tapystry import Effect, Strand, Call, Broadcast, Receive, CallFork, First, Cancel, TapystryError
+import time
+
+from tapystry import Effect, Strand, Call, Broadcast, Receive, CallFork, First, Cancel, TapystryError, CallThread
 from tapystry import as_effect
 
 
@@ -118,3 +120,8 @@ def Subscribe(message_key, fn, predicate=None, leading_only=False, latest_only=F
             if latest_only and task is not None:
                 yield Cancel(task)
             task = yield CallFork(fn, (msg,))
+
+
+def Sleep(t):
+    return CallThread(time.sleep, args=(t,))
+

@@ -168,13 +168,13 @@ def test_subscribe():
 
         for i in range(4):
             yield tap.Broadcast("key", i)
-        yield tap.Sleep(0)
+        yield tap.Sleep(0.001)  # TODO: fix this to join on the original broadcast?
         assert a == 1 + 3
         assert b == 1
         yield tap.Broadcast("finish")
         for i in range(4):
             yield tap.Broadcast("key", i)
-        yield tap.Sleep(0)
+        yield tap.Sleep(0.001)  # TODO: fix this to join on the original broadcast?
         assert a == (1 + 3) * 2
         assert b == 2
 
@@ -183,7 +183,7 @@ def test_subscribe():
         yield tap.Broadcast("finish")
         for i in range(4):
             yield tap.Broadcast("key", i)
-        yield tap.Sleep(0)
+        yield tap.Sleep(0.001)  # TODO: fix this to join on the original broadcast?
         assert a == (1 + 3) * 2
         assert b == 2
 
@@ -233,17 +233,16 @@ def test_subscribes_all():
         yield tap.Receive("finish")
 
     def fn():
-        yield tap.CallFork(recv_broadcast)
+        t1 = yield tap.CallFork(recv_broadcast)
         ta = yield tap.Subscribe("key", increment)
-        yield tap.CallFork(recv_broadcast)
+        t2 = yield tap.CallFork(recv_broadcast)
 
-        yield tap.Sleep(0)
         yield tap.Broadcast("key", "main")
-        yield tap.Sleep(0)
+        yield tap.Join([t1, t2])
+        yield tap.Sleep(0.001)  # TODO: fix this to join on the original broadcast?
         assert a == 3
-        yield tap.Sleep(0)
         yield tap.Broadcast("key", "main2")
-        yield tap.Sleep(0)
+        yield tap.Sleep(0.001)  # TODO: fix this to join on the original broadcast?
         assert a == 4
         ta.cancel()
 

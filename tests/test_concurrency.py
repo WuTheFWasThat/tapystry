@@ -37,11 +37,11 @@ def test_lock():
         assert a == 6
 
         yield tap.Broadcast("unlock")
-        yield tap.Sleep(0.001)
+        yield tap.Sleep(0.01)
         assert a == 11
 
         yield tap.Broadcast("unlock")
-        yield tap.Sleep(0.001)
+        yield tap.Sleep(0.01)
         assert a == 13
 
     tap.run(fn)
@@ -117,7 +117,7 @@ def test_lock_cancel_mid_acquire():
 
         yield tap.Cancel(t)
         yield tap.Broadcast("unlock")
-        yield tap.Sleep(0.001)
+        yield tap.Sleep(0.01)
         assert a == 10
 
         yield tap.Broadcast("unlock")
@@ -180,7 +180,7 @@ def test_lock_cancel_mid_acquire_trickier():
         yield tap.Broadcast("3")
         yield tap.Broadcast("2")  # this simultaneously tries to cancel 1 and unlocks
 
-        yield tap.Sleep(0.001)
+        yield tap.Sleep(0.01)
         assert a == 10
 
         yield tap.Broadcast("1")

@@ -1,3 +1,6 @@
+import threading
+import queue
+from concurrent.futures import ThreadPoolExecutor
 import inspect
 import abc
 from collections import defaultdict, deque
@@ -78,6 +81,22 @@ class CallFork(Effect):
         super().__init__(type="CallFork", name=name, **effect_kwargs)
 
 
+class CallThread(Effect):
+    """
+    # TODO: make this thread able to yield back to the event loop?
+    Effect which spins up a function in a new thread
+    The tapystry engine returns the function's return value
+    """
+    def __init__(self, f, args=(), kwargs=None, name=None, **effect_kwargs):
+        self.f = f
+        self.args = args
+        self.kwargs = kwargs or dict()
+        if name is None:
+            name = f.__name__
+        super().__init__(type="CallThread", name=name, **effect_kwargs)
+
+
+
 class First(Effect):
     """
     Effect which returns when one of the strands is done.
@@ -104,17 +123,6 @@ class Cancel(Effect):
         if name is None:
             name = str(self.strand)
         super().__init__(type="Cancel", name=name, **effect_kwargs)
-
-
-class Sleep(Effect):
-    """
-    Effect which sleeps the calling strand for the specified period of time
-    """
-    def __init__(self, t, name=None, **effect_kwargs):
-        self.t = t
-        if name is None:
-            name = str(t)
-        super().__init__(type="Sleep", name=name, **effect_kwargs)
 
 
 class Intercept(Effect):
@@ -174,6 +182,7 @@ class Strand():
             assert self._edge is not None
 
         self._caller = caller
+        self._future = None
 
     def send(self, value=None):
         assert not self._canceled
@@ -257,12 +266,24 @@ class Strand():
         # if self._done:  ??
         if self._effect is not None:
             self._effect.cancel()
+        if self._future is not None:
+            self._future.cancel()
         for child in self._live_children:
             child.cancel()
         self._canceled = True
 
     def is_canceled(self):
         return self._canceled
+
+    def set_future(self, future):
+        assert self._future is None
+        self._future = future
+
+    def remove_future(self):
+        removed = self._future
+        assert removed is not None
+        self._future = None
+        return removed
 
 
 def _indented(lines):
@@ -275,18 +296,18 @@ def _indented(lines):
 
 
 class _QueueItem():
-    def __init__(self, effect, strand, wake_time=None):
+    def __init__(self, effect, strand):
         self.strand = strand
         self.effect = effect
-        self.wake_time = wake_time
 
 
-def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
+def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=None):
     # dict from string to waiting functions
     waiting = defaultdict(list)
     # dict from strand to waiting key
     # TODO: gc hanging strands
     hanging_strands = set()
+
     q = deque()
 
     # list of intercept items
@@ -305,9 +326,6 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
                 q.append(_QueueItem(effect, strand))
             else:
                 q.appendleft(_QueueItem(effect, strand))
-        elif isinstance(effect, Sleep):
-            wake_time = time.time() + effect.t
-            q.appendleft(_QueueItem(effect, strand, wake_time))
         else:
             q.append(_QueueItem(effect, strand))
 
@@ -379,9 +397,31 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
             hanging_strands.remove(intercepted_strand)
         return lambda x: Call(inject, (x,))
 
-    advance_strand(initial_strand)
-    while len(q):
-        item = q.pop()
+    threads_q = queue.Queue()
+    executor = ThreadPoolExecutor(max_workers=max_threads)
+    thread_strands = dict()  # dict from thread to callback
+
+    def handle_call_thread(effect, strand):
+        future = executor.submit(effect.f, *effect.args, **effect.kwargs)
+        id = uuid4()
+        strand.set_future(future)
+
+        def done_callback(f):
+            assert f == future
+            assert f.done()
+            assert strand.remove_future() == f
+            if future.cancelled():
+                assert strand._canceled
+                threads_q.put((None, id))
+            else:
+                threads_q.put((f.result(), id))
+
+        thread_strands[id] = strand
+        future.add_done_callback(done_callback)
+
+    def handle_item(item):
+        if item.strand.is_canceled():
+            return
 
         effect = item.effect
         if isinstance(effect, Intercept):
@@ -389,7 +429,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
                 raise TapystryError(f"Cannot intercept outside of test mode!")
             intercepts.append(item)
             hanging_strands.add(item.strand)
-            continue
+            return
 
         if test_mode:
             intercepted = False
@@ -403,21 +443,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
                 intercepts.remove(intercept_item)
                 hanging_strands.add(item.strand)
                 advance_strand(intercept_item.strand, (effect, make_injector(item.strand)))
-                continue
-
-        if item.wake_time is not None and item.wake_time > time.time():
-            q.appendleft(item)
-
-            # actually sleep
-            min_wake_time = min([item.wake_time or 0 for item in q])
-            t = time.time()
-            if min_wake_time > t:
-                time.sleep(min_wake_time - t)
-
-            continue
-
-        if item.strand.is_canceled():
-            continue
+                return
 
         if debug:
             print(f"Handling {effect} (from {item.strand})")
@@ -444,17 +470,40 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False):
             if not fork_strand.is_done():
                 # otherwise wasn't even a generator
                 advance_strand(fork_strand)
+        elif isinstance(effect, CallThread):
+            handle_call_thread(effect, item.strand)
         elif isinstance(effect, First):
             add_racing_strand(effect.strands, item.strand, effect.cancel_losers)
         elif isinstance(effect, Cancel):
             effect.strand.cancel()
             advance_strand(item.strand)
-        elif isinstance(effect, Sleep):
+        elif isinstance(effect, CallThread):
             advance_strand(item.strand)
         elif isinstance(effect, DebugTree):
             advance_strand(item.strand, initial_strand.tree())
         else:
             raise TapystryError(f"Unhandled effect type {type(effect)}: {item.strand.stack()}")
+
+    advance_strand(initial_strand)
+    while True:
+        if not (len(q) or len(thread_strands)):
+            break
+
+        while thread_strands:
+            try:
+                result, id = threads_q.get(block=len(q) == 0)
+                strand = thread_strands[id]
+                if not strand.is_canceled():
+                    advance_strand(strand, value=result)
+                else:
+                    assert result is None
+                del thread_strands[id]
+            except queue.Empty:
+                break
+
+        if len(q):
+            item = q.pop()
+            handle_item(item)
 
     for strand in hanging_strands:
         if not strand.is_canceled():

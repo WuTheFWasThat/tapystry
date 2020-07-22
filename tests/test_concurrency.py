@@ -342,6 +342,7 @@ def test_call_thread():
             a += 1
             with cv:
                 cv.notify()
+        return "done"
 
     def fn():
         t = yield tap.Fork(tap.CallThread(thread_fn))
@@ -359,7 +360,7 @@ def test_call_thread():
             cv.notify()
         assert a == 2
 
-        yield tap.Join(t)
+        assert (yield tap.Join(t)) == "done"
 
     tap.run(fn)
 

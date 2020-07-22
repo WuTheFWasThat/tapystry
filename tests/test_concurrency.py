@@ -1,3 +1,4 @@
+import threading
 import pytest
 
 import tapystry as tap
@@ -326,3 +327,80 @@ def test_queues_put_then_get_cancel():
         assert (yield tap.Join(t)) == 3
 
     tap.run(fn)
+
+
+def test_call_thread():
+    a = 0
+
+    cv = threading.Condition()
+
+    def thread_fn():
+        nonlocal a
+        for _ in range(2):
+            with cv:
+                cv.wait()
+            a += 1
+            with cv:
+                cv.notify()
+
+    def fn():
+        t = yield tap.Fork(tap.CallThread(thread_fn))
+        yield tap.Sleep(0.01)
+        assert a == 0
+        with cv:
+            cv.notify()
+            cv.wait()
+        assert a == 1
+        with cv:
+            cv.notify()
+            cv.wait()
+        assert a == 2
+        with cv:
+            cv.notify()
+        assert a == 2
+
+        yield tap.Join(t)
+
+    tap.run(fn)
+
+
+"""
+def test_cancel_thread():
+    a = 0
+
+    cv = threading.Condition()
+
+    def thread_fn():
+        nonlocal a
+        while True:
+            with cv:
+                cv.wait()
+            a += 1
+            with cv:
+                cv.notify()
+
+    def fn():
+        t = yield tap.Fork(tap.CallThread(thread_fn))
+        yield tap.Sleep(0.01)
+        assert a == 0
+        with cv:
+            cv.notify()
+            cv.wait()
+        assert a == 1
+        with cv:
+            cv.notify()
+            cv.wait()
+        assert a == 2
+        with cv:
+            cv.notify()
+            cv.wait()
+        assert a == 3
+        yield tap.Cancel(t)
+
+        yield tap.Sleep(0.1)
+        with cv:
+            cv.notify()
+        assert a == 3
+
+    tap.run(fn)
+"""

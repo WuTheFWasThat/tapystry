@@ -267,7 +267,7 @@ class Strand():
         if self._effect is not None:
             self._effect.cancel()
         if self._future is not None:
-            self._future.cancel()
+            assert self._future.cancel(), f"Failed to cancel thread, sorry"
         for child in self._live_children:
             child.cancel()
         self._canceled = True

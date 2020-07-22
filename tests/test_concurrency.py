@@ -364,7 +364,6 @@ def test_call_thread():
     tap.run(fn)
 
 
-"""
 def test_cancel_thread():
     a = 0
 
@@ -372,7 +371,7 @@ def test_cancel_thread():
 
     def thread_fn():
         nonlocal a
-        while True:
+        for _ in range(2):
             with cv:
                 cv.wait()
             a += 1
@@ -380,27 +379,25 @@ def test_cancel_thread():
                 cv.notify()
 
     def fn():
-        t = yield tap.Fork(tap.CallThread(thread_fn))
+        t = yield tap.Fork(tap.Sequence([
+            tap.CallThread(thread_fn),
+            tap.CallThread(thread_fn),
+        ]))
         yield tap.Sleep(0.01)
         assert a == 0
         with cv:
             cv.notify()
             cv.wait()
         assert a == 1
+        # this cancels the second one, but not the first
+        yield tap.Cancel(t)
         with cv:
             cv.notify()
             cv.wait()
         assert a == 2
         with cv:
             cv.notify()
-            cv.wait()
-        assert a == 3
-        yield tap.Cancel(t)
-
         yield tap.Sleep(0.1)
-        with cv:
-            cv.notify()
-        assert a == 3
+        assert a == 2
 
     tap.run(fn)
-"""

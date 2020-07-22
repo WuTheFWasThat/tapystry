@@ -86,6 +86,9 @@ class CallThread(Effect):
     # TODO: make this thread able to yield back to the event loop?
     Effect which spins up a function in a new thread
     The tapystry engine returns the function's return value
+    NOTE: what runs within the thread
+    - is *not* a generator, it cannot yield effects back
+    - can *not* be canceled
     """
     def __init__(self, f, args=(), kwargs=None, name=None, **effect_kwargs):
         self.f = f
@@ -266,24 +269,12 @@ class Strand():
         # if self._done:  ??
         if self._effect is not None:
             self._effect.cancel()
-        if self._future is not None:
-            assert self._future.cancel(), f"Failed to cancel thread, sorry"
         for child in self._live_children:
             child.cancel()
         self._canceled = True
 
     def is_canceled(self):
         return self._canceled
-
-    def set_future(self, future):
-        assert self._future is None
-        self._future = future
-
-    def remove_future(self):
-        removed = self._future
-        assert removed is not None
-        self._future = None
-        return removed
 
 
 def _indented(lines):
@@ -404,12 +395,10 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
     def handle_call_thread(effect, strand):
         future = executor.submit(effect.f, *effect.args, **effect.kwargs)
         id = uuid4()
-        strand.set_future(future)
 
         def done_callback(f):
             assert f == future
             assert f.done()
-            assert strand.remove_future() == f
             if future.cancelled():
                 assert strand._canceled
                 threads_q.put((None, id))

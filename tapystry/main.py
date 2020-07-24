@@ -27,6 +27,16 @@ class Effect(metaclass=abc.ABCMeta):
         return f"{self.type}"
 
 
+class Wrapper(Effect):
+    """
+    Wrapper around another effect which modifies the type
+    """
+    def __init__(self, effect, type, **effect_kwargs):
+        self.effect = effect
+        super().__init__(type=type, **effect_kwargs)
+
+
+
 class Broadcast(Effect):
     """
     Effect which broadcasts a message for all strands to hear
@@ -468,6 +478,8 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
             advance_strand(strand)
         elif isinstance(effect, DebugTree):
             advance_strand(strand, initial_strand.tree())
+        elif isinstance(effect, Wrapper):
+            handle_item(strand, effect.effect)
         else:
             raise TapystryError(f"Unhandled effect type {type(effect)}: {strand.stack()}")
 

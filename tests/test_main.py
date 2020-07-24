@@ -250,7 +250,7 @@ def test_multifirst_canceled():
     with pytest.raises(tap.TapystryError) as x:
         tap.run(fn)
     # TODO: always do the child strand
-    assert str(x.value).startswith("Hanging strands detected waiting for Race(Join(joincanceled))") or str(x.value).startswith("Hanging strands detected waiting for Call(Join)")
+    assert str(x.value).startswith("Hanging strands detected waiting for Race(Join(joincanceled))") or str(x.value).startswith("Hanging strands detected waiting for Join")
 
 
 def test_multifirst_no_cancel():

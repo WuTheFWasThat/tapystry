@@ -1,10 +1,10 @@
 import time
 
-from tapystry import Effect, Strand, Call, Broadcast, Receive, CallFork, First, Cancel, TapystryError, CallThread
+from tapystry import Effect, Strand, Call, Broadcast, Receive, CallFork, First, Cancel, TapystryError, CallThread, Wrapper
 from tapystry import as_effect
 
 
-@as_effect()
+@as_effect("Sequence")
 def Sequence(effects, name=None):
     """Do each of the effects.
     Effects can be a (nested) list/dict structure
@@ -33,7 +33,7 @@ def Sequence(effects, name=None):
     return results
 
 
-@as_effect()
+@as_effect("Join")
 def Join(strands, name=None):
     """
     Returns the result of a strand (or nested structure of strands)
@@ -73,10 +73,10 @@ def Fork(effects):
                 raise TapystryError(f"Input to Fork should be an Effect (or nested list/dict of them): {effects}")
             return {k: fork_effects(v) for k, v in effects.items()}
 
-    return Sequence(fork_effects(effects))
+    return Wrapper(Sequence(fork_effects(effects)), type="Fork")
 
 
-@as_effect()
+@as_effect("Race")
 def Race(effects, name=None):
     """Wait for the first of the effects to finish.
     Returns a tuple with the key of the winning item, and its value
@@ -98,7 +98,7 @@ def Race(effects, name=None):
     return keys[i], result
 
 
-@as_effect(forked=True)
+@as_effect("Subscribe", forked=True)
 def Subscribe(message_key, fn, predicate=None, leading_only=False, latest_only=False):
     """
     Upon receiving any message, runs the specified function on the sent value.

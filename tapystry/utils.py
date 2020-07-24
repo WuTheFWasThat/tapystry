@@ -1,9 +1,9 @@
-from tapystry.main import Call, CallFork, run
+from tapystry.main import Call, CallFork, Wrapper, run
 
 from functools import wraps
 
 
-def as_effect(forked=False):
+def as_effect(type=None, forked=False):
     """
     Creates a decorator that turns a normal generator into an effect constructor
     """
@@ -11,9 +11,12 @@ def as_effect(forked=False):
         @wraps(f)
         def wrapper(*args, **kwargs):
             if forked:
-                return CallFork(f, args=args, kwargs=kwargs)
+                effect = CallFork(f, args=args, kwargs=kwargs)
             else:
-                return Call(f, args=args, kwargs=kwargs)
+                effect = Call(f, args=args, kwargs=kwargs)
+            if type is not None:
+                effect = Wrapper(effect, type=type)
+            return effect
         return wrapper
     return decorator
 

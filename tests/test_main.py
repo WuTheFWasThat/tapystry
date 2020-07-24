@@ -351,6 +351,61 @@ def test_intercept():
     assert tap.run(fn, test_mode=True) == "real"  # got intercepted
 
 
+def test_intercept_cancel_too_late():
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
+
+    def receiver():
+        value = yield tap.Receive('key')
+        return value
+
+    def intercepter():
+        (effect, inject) = yield tap.Intercept(lambda e: isinstance(e, tap.Receive))
+        assert effect.key == "key"
+        yield inject("real")
+
+    def fn():
+        intercept_strand = yield tap.CallFork(intercepter)
+        yield tap.Cancel(intercept_strand)
+        recv_strand = yield tap.CallFork(receiver)
+        # even though this is forked, it doesn't end up hanging
+        yield tap.Call(broadcaster, (5,))
+        # this gets intercepted and never gets injected
+        yield tap.Join(recv_strand)
+
+    with pytest.raises(tap.TapystryError) as x:
+        tap.run(fn, test_mode=True)
+    # print(x.value)
+    assert str(x.value).startswith("Hanging strands detected waiting for Race(Join")
+
+
+def test_intercept_cancel():
+    def broadcaster(value):
+        yield tap.Broadcast('key', value)
+
+    def receiver():
+        value = yield tap.Receive('key')
+        return value
+
+    def intercepter():
+        (effect, inject) = yield tap.Intercept(lambda e: False)
+        (effect, inject) = yield tap.Intercept(lambda e: isinstance(e, tap.Receive))
+        assert effect.key == "key"
+        yield inject("real")
+
+    def fn():
+        intercept_strand = yield tap.CallFork(intercepter)
+        yield tap.Cancel(intercept_strand)
+        recv_strand = yield tap.CallFork(receiver)
+        # even though this is forked, it doesn't end up hanging
+        yield tap.Call(broadcaster, (5,))
+        value = yield tap.Join(recv_strand)
+        assert value == 5  # did *not* get intercepted
+        return value
+
+    assert tap.run(fn, test_mode=True) == 5  # got intercepted
+
+
 def test_error_stack():
     def broadcaster(value):
         yield tap.Broadcast('key', value)

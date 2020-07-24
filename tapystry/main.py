@@ -408,70 +408,68 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
         thread_strands[id] = strand
         future.add_done_callback(done_callback)
 
-    def handle_item(item):
-        if item.strand.is_canceled():
+    def handle_item(strand, effect):
+        if strand.is_canceled():
             return
 
-        effect = item.effect
         if isinstance(effect, Intercept):
             if not test_mode:
                 raise TapystryError(f"Cannot intercept outside of test mode!")
-            intercepts.append(item)
-            hanging_strands.add(item.strand)
+            intercepts.append((strand, effect))
+            hanging_strands.add(strand)
             return
 
         if test_mode:
             intercepted = False
-            for intercept_item in intercepts:
-                intercept_effect = intercept_item.effect
+            for (intercept_strand, intercept_effect) in intercepts:
                 if intercept_effect.predicate is None or intercept_effect.predicate(effect):
                     intercepted = True
                     break
             if intercepted:
-                hanging_strands.remove(intercept_item.strand)
-                intercepts.remove(intercept_item)
-                hanging_strands.add(item.strand)
-                advance_strand(intercept_item.strand, (effect, make_injector(item.strand)))
+                hanging_strands.remove(intercept_strand)
+                intercepts.remove((intercept_strand, intercept_effect))
+                hanging_strands.add(strand)
+                advance_strand(intercept_strand, (effect, make_injector(strand)))
                 return
 
         if debug:
-            print(f"Handling {effect} (from {item.strand})")
+            print(f"Handling {effect} (from {strand})")
 
         if not isinstance(effect, Effect):
             raise TapystryError(f"Strand yielded non-effect {type(effect)}")
 
         if isinstance(effect, Broadcast):
             resolve_waiting("broadcast." + effect.key, effect.value)
-            advance_strand(item.strand)
+            advance_strand(strand)
         elif isinstance(effect, Receive):
-            add_waiting_strand("broadcast." + effect.key, item.strand, effect.predicate)
+            add_waiting_strand("broadcast." + effect.key, strand, effect.predicate)
         elif isinstance(effect, Call):
-            strand = Strand(effect._caller, effect.gen, effect.args, effect.kwargs, parent=item.strand, edge=effect.name or "call")
-            if strand.is_done():
+            call_strand = Strand(effect._caller, effect.gen, effect.args, effect.kwargs, parent=strand, edge=effect.name or "call")
+            if call_strand.is_done():
                 # wasn't even a generator
-                advance_strand(item.strand, strand.get_result())
+                advance_strand(strand, call_strand.get_result())
             else:
-                add_waiting_strand("done." + strand.id.hex, item.strand)
-                advance_strand(strand)
+                add_waiting_strand("done." + call_strand.id.hex, strand)
+                advance_strand(call_strand)
         elif isinstance(effect, CallFork):
-            fork_strand = Strand(effect._caller, effect.gen, effect.args, effect.kwargs, parent=item.strand, edge=effect.name or "fork")
-            advance_strand(item.strand, fork_strand)
+            fork_strand = Strand(effect._caller, effect.gen, effect.args, effect.kwargs, parent=strand, edge=effect.name or "fork")
+            advance_strand(strand, fork_strand)
             if not fork_strand.is_done():
                 # otherwise wasn't even a generator
                 advance_strand(fork_strand)
         elif isinstance(effect, CallThread):
-            handle_call_thread(effect, item.strand)
+            handle_call_thread(effect, strand)
         elif isinstance(effect, First):
-            add_racing_strand(effect.strands, item.strand, effect.cancel_losers)
+            add_racing_strand(effect.strands, strand, effect.cancel_losers)
         elif isinstance(effect, Cancel):
             effect.strand.cancel()
-            advance_strand(item.strand)
+            advance_strand(strand)
         elif isinstance(effect, CallThread):
-            advance_strand(item.strand)
+            advance_strand(strand)
         elif isinstance(effect, DebugTree):
-            advance_strand(item.strand, initial_strand.tree())
+            advance_strand(strand, initial_strand.tree())
         else:
-            raise TapystryError(f"Unhandled effect type {type(effect)}: {item.strand.stack()}")
+            raise TapystryError(f"Unhandled effect type {type(effect)}: {strand.stack()}")
 
     advance_strand(initial_strand)
     while True:
@@ -492,7 +490,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
 
         if len(q):
             item = q.pop()
-            handle_item(item)
+            handle_item(item.strand, item.effect)
 
     for strand in hanging_strands:
         if not strand.is_canceled():

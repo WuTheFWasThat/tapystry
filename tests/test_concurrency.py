@@ -402,3 +402,15 @@ def test_cancel_thread():
         assert a == 2
 
     tap.run(fn)
+
+
+def test_race_threads():
+    def fn():
+        winner, r = yield tap.Race(dict(
+            long=tap.Sleep(0.03),
+            short=tap.Sleep(0.02)
+        ))
+        assert winner == "short"
+
+    tap.run(fn)
+

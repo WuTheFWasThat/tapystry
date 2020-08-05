@@ -376,7 +376,7 @@ def test_intercept_cancel_too_late():
     with pytest.raises(tap.TapystryError) as x:
         tap.run(fn, test_mode=True)
     # print(x.value)
-    assert str(x.value).startswith("Hanging strands detected waiting for Race(Join")
+    assert str(x.value).startswith("Hanging strands detected waiting for Race(Join") or str(x.value).startswith("Hanging strands detected waiting for Join") or str(x.value).startswith("Hanging strands detected waiting for Receive")
 
 
 def test_intercept_cancel():

@@ -54,7 +54,7 @@ def Join(strands, name=None):
         return vals
 
 
-def Fork(effects):
+def Fork(effects, *, run_first=False):
     """Do each of the effects in parallel.
     Returns a strand, whose result reflects the same structure as the effects passed in
     """
@@ -65,7 +65,7 @@ def Fork(effects):
 
     def fork_effects(effects):
         if isinstance(effects, Effect):
-            return CallFork(call_fork, (effects,))
+            return CallFork(call_fork, (effects,), run_first=run_first)
         elif isinstance(effects, list):
             return [fork_effects(v) for v in effects]
         else:

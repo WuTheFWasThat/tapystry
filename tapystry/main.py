@@ -13,13 +13,14 @@ class Effect(metaclass=abc.ABCMeta):
     """
     Base class for effects which can be yielded to the tapystry event loop.
     """
-    def __init__(self, type, oncancel=(lambda: None), name=None, caller=None, caller_stack_index=2):
+    def __init__(self, type, oncancel=(lambda: None), name=None, caller=None, caller_stack_index=2, immediate=True):
         self.type = type
         self.cancel = oncancel
         self.name = name
         if caller is None:
             caller = inspect.stack()[caller_stack_index]
         self._caller = caller
+        self.immediate = immediate
 
     def __str__(self):
         if self.name is not None:
@@ -44,10 +45,9 @@ class Broadcast(Effect):
     def __init__(self, key, value=None, name=None, immediate=False, **effect_kwargs):
         self.key = key
         self.value = value
-        self.immediate = immediate
         if name is None:
             name = key
-        super().__init__(type="Broadcast", name=name, **effect_kwargs)
+        super().__init__(type="Broadcast", name=name, immediate=immediate, **effect_kwargs)
 
 
 class Receive(Effect):
@@ -82,10 +82,11 @@ class CallFork(Effect):
     Effect which spins up a new strand by calling generator on the specified arguments
     The tapystry engine immediately returns a Strand object.
     """
-    def __init__(self, gen, args=(), kwargs=None, name=None, **effect_kwargs):
+    def __init__(self, gen, args=(), kwargs=None, name=None, run_first=False, **effect_kwargs):
         self.gen = gen
         self.args = args
         self.kwargs = kwargs
+        self.run_first = run_first
         if name is None:
             name = gen.__name__
         super().__init__(type="CallFork", name=name, **effect_kwargs)
@@ -238,7 +239,7 @@ class Strand():
             f"  {self._caller.code_context[0].strip()}",
         ]
 
-    def stack(self):
+    def stack(self, indent=0):
         # if self._parent is None:
         #     return [f"Strand[{self.id.hex}]"]
         # else:
@@ -251,9 +252,9 @@ class Strand():
             return s
         else:
             return "\n".join([
-                self._parent.stack(),
-                f"Yields effect {self._parent_effect}, created at",
-                s
+                self._parent.stack(indent=0),
+                " " * indent + f"Yields effect {self._parent_effect}, created at",
+                " " * indent + s
             ])
 
     def _treelines(self, indent=0):
@@ -322,13 +323,10 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
     def queue_effect(effect, strand):
         if not isinstance(effect, Effect):
             raise TapystryError(f"Strand yielded non-effect {type(effect)}")
-        if isinstance(effect, Broadcast):
-            if effect.immediate:
-                q.append(_QueueItem(effect, strand))
-            else:
-                q.appendleft(_QueueItem(effect, strand))
-        else:
+        if effect.immediate:
             q.append(_QueueItem(effect, strand))
+        else:
+            q.appendleft(_QueueItem(effect, strand))
 
     def advance_strand(strand, value=_noval):
         if strand.is_canceled():
@@ -388,7 +386,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
     def resolve_waiting(wait_key, value):
         fns = waiting[wait_key]
         if debug:
-            print("resolving", wait_key, len(fns))
+            print("resolving", wait_key, len(fns), value)
         # clear first in case it mutates
         waiting[wait_key] = [fn for fn in fns if not fn(value)]
 
@@ -444,6 +442,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
 
         if debug:
             print(f"Handling {effect} (from {strand})")
+            print(strand.stack(indent=2))
 
         if not isinstance(effect, Effect):
             raise TapystryError(f"Strand yielded non-effect {type(effect)}")
@@ -463,10 +462,13 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
                 advance_strand(call_strand)
         elif isinstance(effect, CallFork):
             fork_strand = Strand(effect._caller, effect.gen, effect.args, effect.kwargs, parent=strand, edge=effect.name or "fork")
-            advance_strand(strand, fork_strand)
+            if not effect.run_first:
+                advance_strand(strand, fork_strand)
             if not fork_strand.is_done():
                 # otherwise wasn't even a generator
                 advance_strand(fork_strand)
+            if effect.run_first:
+                advance_strand(strand, fork_strand)
         elif isinstance(effect, CallThread):
             handle_call_thread(effect, strand)
         elif isinstance(effect, First):

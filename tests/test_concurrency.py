@@ -204,6 +204,7 @@ def test_queues_get_then_put():
         a += b
 
     def fn():
+        assert not q.has_work()
         t1 = yield tap.CallFork(pop_and_add)
         t2 = yield tap.CallFork(pop_and_add)
         t3 = yield tap.CallFork(pop_and_add)
@@ -257,9 +258,11 @@ def test_queues_put_then_get():
     q = tap.Queue(buffer_size=2)
 
     def fn():
+        assert not q.has_work()
         # we have buffer so a put is fine
         yield q.Put(3)
         yield q.Put(5)
+        assert q.has_work()
         assert (yield q.Get()) == 3
         assert (yield q.Get()) == 5
         yield q.Put(3)
@@ -272,8 +275,10 @@ def test_queues_put_then_get_no_buffer():
     q = tap.Queue(buffer_size=0)
 
     def fn():
-        # we have buffer so a put is fine
+        assert not q.has_work()
         t = yield tap.Fork(q.Put(3))
+        yield tap.Sleep(0.01)
+        assert q.has_work()
         assert (yield q.Get()) == 3
         yield tap.Join(t)
 

@@ -123,3 +123,6 @@ class Queue():
             self._gets.append(get_id)
             item = yield Receive(f"put.{self._id}.{get_id}", oncancel=remove)
         return item
+
+    def has_work(self):
+        return len(self._buffer) or len(self._puts)

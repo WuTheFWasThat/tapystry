@@ -140,7 +140,7 @@ def test_nested_cancel():
         for _ in range(4):
             yield tap.Broadcast("key")
         # this should also cancel recv_inner
-        t.cancel()
+        yield tap.Cancel(t)
         for _ in range(4):
             yield tap.Broadcast("key")
         return a, b
@@ -244,6 +244,6 @@ def test_subscribes_all():
         yield tap.Broadcast("key", "main2")
         yield tap.Sleep(0.001)  # TODO: fix this to join on the original broadcast?
         assert a == 4
-        ta.cancel()
+        yield tap.Cancel(ta)
 
     tap.run(fn)

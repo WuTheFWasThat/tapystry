@@ -1,3 +1,4 @@
+from functools import partial
 import threading
 import queue
 from concurrent.futures import ThreadPoolExecutor
@@ -118,9 +119,12 @@ class First(Effect):
     NOTE: Use of this can be dangerous and can lead to deadlocks, as it cancels losers.
           It is safer to us higher-level APIs such as Race and Join
     """
-    def __init__(self, strands, name=None, cancel_losers=True, **effect_kwargs):
+    def __init__(self, strands, name=None, cancel_losers=True, ensure_cancel=None, **effect_kwargs):
         self.strands = strands
         self.cancel_losers = cancel_losers
+        self.ensure_cancel = cancel_losers if ensure_cancel is None else ensure_cancel
+        if not self.cancel_losers:
+            assert not self.ensure_cancel
         if name is None:
             name = ", ".join([str(x) for x in self.strands])
         self.name = name
@@ -280,8 +284,6 @@ class Strand():
         # if self._done:  ??
         if self._effect is not None:
             self._effect.cancel()
-        for child in self._live_children:
-            child.cancel()
         self._canceled = True
 
     def is_canceled(self):
@@ -354,34 +356,48 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
             return True
         waiting[key].append(receive)
 
-    def add_racing_strand(racing_strands, race_strand, cancel_losers):
+    def cancel_strand(strand):
+        strand.cancel()
+        waiting.pop("done." + strand.id.hex, None)
+        for child in strand._live_children:
+            cancel_strand(child)
+
+    def add_racing_strand(racing_strands, race_strand, cancel_losers, ensure_cancel):
         assert race_strand not in hanging_strands
         hanging_strands.add(race_strand)
 
         received = False
 
-        def receive_fn(i):
-            def receive(val):
-                nonlocal received
-                assert not (cancel_losers and received)
-                if received:
-                    return
-                for j, strand in enumerate(racing_strands):
-                    if j == i:
-                        assert strand.is_done()
-                    else:
+        def declare_winner(i, val):
+            nonlocal received
+            assert not (ensure_cancel and received)
+            if received:
+                return
+            for j, strand in enumerate(racing_strands):
+                if j == i:
+                    assert strand.is_done()
+                else:
+                    if ensure_cancel:
                         assert not strand.is_done()
-                        if cancel_losers:
-                            strand.cancel()
-                received = True
-                assert race_strand in hanging_strands
-                hanging_strands.remove(race_strand)
-                advance_strand(race_strand, (i, val))
-            return receive
+                    if cancel_losers:
+                        cancel_strand(strand)
+            received = True
+            assert race_strand in hanging_strands
+            hanging_strands.remove(race_strand)
+            advance_strand(race_strand, (i, val))
+
+        winner = None
         for i, strand in enumerate(racing_strands):
             if strand.is_done():
-                raise TapystryError(f"Race between effects that are already completed")
-            waiting["done." + strand.id.hex].append(receive_fn(i))
+                if winner is not None and ensure_cancel:
+                    raise TapystryError(f"Race between effects that are already completed")
+                winner = (i, strand)
+        if winner is not None:
+            (i, strand) = winner
+            declare_winner(i, strand.get_result())
+
+        for i, strand in enumerate(racing_strands):
+            waiting["done." + strand.id.hex].append(partial(declare_winner, i))
 
     def resolve_waiting(wait_key, value):
         fns = waiting[wait_key]
@@ -472,11 +488,9 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
         elif isinstance(effect, CallThread):
             handle_call_thread(effect, strand)
         elif isinstance(effect, First):
-            add_racing_strand(effect.strands, strand, effect.cancel_losers)
+            add_racing_strand(effect.strands, strand, effect.cancel_losers, effect.ensure_cancel)
         elif isinstance(effect, Cancel):
-            effect.strand.cancel()
-            advance_strand(strand)
-        elif isinstance(effect, CallThread):
+            cancel_strand(effect.strand)
             advance_strand(strand)
         elif isinstance(effect, DebugTree):
             advance_strand(strand, initial_strand.tree())

@@ -77,7 +77,7 @@ def Fork(effects, *, run_first=False):
 
 
 @as_effect("Race")
-def Race(effects, name=None):
+def Race(effects, name=None, ensure_cancel=True):
     """Wait for the first of the effects to finish.
     Returns a tuple with the key of the winning item, and its value
     """
@@ -91,10 +91,8 @@ def Race(effects, name=None):
     strands = []
     for key, effect in zip(keys, effects_array):
         strand = yield Fork(effect)
-        if strand.is_done():
-            return key, strand.get_result()
         strands.append(strand)
-    i, result = yield First(strands, name=f"Race({name})")
+    i, result = yield First(strands, name=f"Race({name})", ensure_cancel=ensure_cancel)
     return keys[i], result
 
 

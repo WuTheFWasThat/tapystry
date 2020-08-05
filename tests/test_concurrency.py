@@ -419,3 +419,11 @@ def test_race_threads():
 
     tap.run(fn)
 
+
+def test_immediate_thread():
+    def fn():
+        def fast():
+            pass
+        yield tap.Race([tap.CallThread(fast)])
+
+    tap.run(fn)

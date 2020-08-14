@@ -120,6 +120,9 @@ def Subscribe(message_key, fn, predicate=None, leading_only=False, latest_only=F
             task = yield CallFork(fn, (msg,))
 
 
-def Sleep(t):
-    return CallThread(time.sleep, args=(t,))
-
+@as_effect("Sleep")
+def Sleep(t, increment=0.1):
+    "Sleep - can be canceled every increment seconds"
+    start = time.time()
+    while time.time() - start < t:
+        yield CallThread(time.sleep, args=(min(increment, t),))

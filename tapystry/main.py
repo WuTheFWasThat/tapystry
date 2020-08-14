@@ -510,8 +510,6 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
                 strand = thread_strands[id]
                 if not strand.is_canceled():
                     advance_strand(strand, value=result)
-                else:
-                    assert result is None
                 del thread_strands[id]
             except queue.Empty:
                 break

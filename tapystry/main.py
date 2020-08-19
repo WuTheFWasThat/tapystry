@@ -209,6 +209,7 @@ class Strand():
         self._live_children.remove(x)
         if (self._done or self._canceled) and not self._live_children:
             if self._parent is not None:
+                assert self in self._parent._live_children
                 self._parent.remove_live_child(self)
 
     def send(self, value=None):

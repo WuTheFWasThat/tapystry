@@ -177,14 +177,17 @@ class Strand():
     def __init__(self, caller, gen, args=(), kwargs=None, *, parent, edge=None):
         if kwargs is None:
             kwargs = dict()
+        self._caller = caller
+        self._future = None
+
         self._it = gen(*args, **kwargs)
         self._done = False
         self._result = None
         self.id = uuid4()
-        self._canceled = False
         # self._error = None
         self._live_children = []
         self._parent = parent
+        self._canceled = False
         if not isinstance(self._it, types.GeneratorType):
             self._result = self._it
             self._done = True
@@ -193,14 +196,20 @@ class Strand():
             self._parent_effect = None
             assert edge is None
         else:
+            assert not self._parent._canceled
             self._parent._live_children.append(self)
             self._parent_effect = self._parent._effect
             self._edge = edge
             assert self._parent_effect is not None
             assert self._edge is not None
 
-        self._caller = caller
-        self._future = None
+    def remove_live_child(self, x):
+        assert self._live_children
+        assert self in self._parent._live_children
+        self._live_children.remove(x)
+        if (self._done or self._canceled) and not self._live_children:
+            if self._parent is not None:
+                self._parent.remove_live_child(self)
 
     def send(self, value=None):
         assert not self._canceled
@@ -212,7 +221,8 @@ class Strand():
         except StopIteration as e:
             self._done = True
             if self._parent is not None:
-                self._parent._live_children.remove(self)
+                if not self._live_children:
+                    self._parent.remove_live_child(self)
             self._result = e.value
             self._effect = None
             return dict(done=True)
@@ -520,6 +530,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
 
     for strand in hanging_strands:
         if not strand.is_canceled():
+            assert not (strand._parent and strand._parent.is_canceled())
             # TODO: add notes on how this can happen
             # forgetting to join fork or forgot to cancel subscription?
             # joining thread that never ends

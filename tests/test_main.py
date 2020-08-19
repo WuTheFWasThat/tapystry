@@ -432,3 +432,19 @@ def test_error_stack():
     # print(x.value)
     assert str(x.value).startswith("Exception caught at")
     assert str(x.value).count(", in receiver\n") == 6
+
+
+def test_tricky_cancel():
+    def wake_and_fork(
+    ):
+        yield tap.Fork(tap.Broadcast("wake"))
+        yield tap.Fork(tap.Receive("hmm"))
+
+    def fn():
+        task = yield tap.CallFork(wake_and_fork)
+        yield tap.Receive("wake")
+        yield tap.Cancel(task)
+
+    tap.run(fn)
+
+

@@ -124,5 +124,7 @@ def Subscribe(message_key, fn, predicate=None, leading_only=False, latest_only=F
 def Sleep(t, increment=0.1):
     "Sleep - can be canceled every increment seconds"
     start = time.time()
-    while time.time() - start < t:
+    while True:
         yield CallThread(time.sleep, args=(min(increment, t),))
+        if time.time() - start >= t:
+            break

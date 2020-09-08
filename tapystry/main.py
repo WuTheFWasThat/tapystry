@@ -9,6 +9,12 @@ from uuid import uuid4
 import types
 import time
 
+def get_nth_frame(n):
+    frame = inspect.currentframe()
+    for _ in range(n+1):
+        frame = frame.f_back
+    return inspect.getframeinfo(frame)
+
 
 class Effect(metaclass=abc.ABCMeta):
     """
@@ -19,7 +25,7 @@ class Effect(metaclass=abc.ABCMeta):
         self.cancel = oncancel
         self.name = name
         if caller is None:
-            caller = inspect.stack()[caller_stack_index]
+            caller = get_nth_frame(caller_stack_index)
         self._caller = caller
         self.immediate = immediate
 
@@ -327,7 +333,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
     # list of intercept items
     intercepts = []
 
-    initial_strand = Strand(inspect.stack()[1], gen, args, kwargs, parent=None)
+    initial_strand = Strand(get_nth_frame(1), gen, args, kwargs, parent=None)
     if initial_strand.is_done():
         # wasn't even a generator
         return initial_strand.get_result()

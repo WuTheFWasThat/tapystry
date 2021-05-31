@@ -10,7 +10,7 @@ This is a small library for handling effects, inspired by [redux-saga](https://w
 
 It's most easily understood by example!
 
-```
+```python
 import tapystry as tap
 
 def broadcaster(value):

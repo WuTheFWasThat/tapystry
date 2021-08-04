@@ -340,7 +340,7 @@ def run(gen, args=(), kwargs=None, debug=False, test_mode=False, max_threads=Non
 
     def queue_effect(effect, strand):
         if not isinstance(effect, Effect):
-            raise TapystryError(f"Strand yielded non-effect {type(effect)}")
+            raise TapystryError(f"Strand yielded non-effect {type(effect)}:\n\n{strand.stack()}")
         if effect.immediate:
             q.append(_QueueItem(effect, strand))
         else:

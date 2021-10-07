@@ -126,3 +126,13 @@ class Queue():
 
     def has_work(self):
         return len(self._buffer) or len(self._puts)
+
+
+def debounced(fn):
+    global_lock = Lock()
+    def new_fn(*args, **kwargs):
+        release = yield global_lock.Acquire()
+        result = yield Call(fn, args, kwargs)
+        yield release
+        return result
+    return new_fn

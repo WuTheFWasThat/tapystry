@@ -59,6 +59,10 @@ class Lock():
         return Release
 
 
+class QueueFullException(Exception):
+    pass
+
+
 class Queue():
     """
     A queue of items.
@@ -79,7 +83,11 @@ class Queue():
         self._counter = 0
 
     @as_effect()
-    def Put(self, item):
+    def Put(self, item, error_if_full=False):
+        """
+        Put an item into the queue
+        Blocks if the queue is full
+        """
         put_id = self._counter
         self._counter += 1
 
@@ -93,6 +101,8 @@ class Queue():
             yield Broadcast(f"put.{self._id}.{get_id}", item, immediate=True)
         else:
             if self._buffer_size >= 0 and len(self._buffer) >= self._buffer_size:
+                if error_if_full:
+                    raise QueueFullException()
                 assert len(self._buffer) == self._buffer_size
                 self._puts.append(put_id)
                 self._put_vals[put_id] = item
@@ -102,6 +112,10 @@ class Queue():
 
     @as_effect()
     def Get(self):
+        """
+        Get an item into the queue
+        Blocks if the queue is empty
+        """
         get_id = self._counter
         self._counter += 1
 

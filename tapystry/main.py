@@ -24,6 +24,8 @@ class Effect(metaclass=abc.ABCMeta):
         self.type = type
         self.cancel = oncancel
         self.name = name
+        # not used for anything but debugging
+        # self.id = uuid4()
         if caller is None:
             caller = get_nth_frame(caller_stack_index)
         self._caller = caller
@@ -141,6 +143,7 @@ class First(Effect):
 class Cancel(Effect):
     """
     Effect which cancels the strand specified
+    Cancels recursively, even with forks
     """
     def __init__(self, strand, name=None, **effect_kwargs):
         self.strand = strand

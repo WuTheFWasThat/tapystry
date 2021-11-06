@@ -448,3 +448,27 @@ def test_tricky_cancel():
     tap.run(fn)
 
 
+
+def test_another_tricky_cancel():
+    a = 0
+    def spin():
+        nonlocal a
+        while True:
+            yield tap.Sleep(0.01)
+            a += 1
+
+    def fork_spin(
+    ):
+        yield tap.CallFork(spin)
+
+    def fn():
+        task = yield tap.CallFork(fork_spin)
+        yield tap.Join(task)
+        yield tap.Sleep(0.03)
+        yield tap.Cancel(task)
+        # this should cancel spin too
+        yield tap.Sleep(0.03)
+        # should be either 3 or 2
+        assert a < 4, a
+
+    tap.run(fn)

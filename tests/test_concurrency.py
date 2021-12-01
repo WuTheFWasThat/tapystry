@@ -62,6 +62,36 @@ def test_lock_hang():
         str(x.value).startswith("Hanging strands detected waiting for Call(Acquire")
 
 
+def test_with_lock():
+    a = 0
+
+    lock = tap.Lock()
+
+    @tap.with_lock(lock)
+    def waits():
+        nonlocal a
+        a += 1
+        yield tap.Receive("msg")
+        a += 1
+
+    def fn():
+        yield tap.CallFork(waits)
+        yield tap.CallFork(waits)
+        yield tap.Sleep(0.01)
+        assert a == 1
+
+        # the waiting strand finally gets to acquire lock, but it is the latest
+        yield tap.Broadcast("msg")
+        yield tap.Sleep(0.01)
+        assert a == 3
+
+        yield tap.Broadcast("msg")
+        yield tap.Sleep(0.01)
+        assert a == 4
+
+    tap.run(fn)
+
+
 def test_release_twice():
     lock = tap.Lock()
 

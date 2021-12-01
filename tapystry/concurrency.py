@@ -1,5 +1,6 @@
 from uuid import uuid4
 from collections import deque
+import functools
 
 from tapystry import Call, Broadcast, Receive, TapystryError, as_effect
 
@@ -150,3 +151,18 @@ def debounced(fn):
         yield release
         return result
     return new_fn
+
+
+def with_lock(lock=None):
+    if lock is None:
+        lock = Lock()
+
+    def decorator(func):
+        @functools.wraps(func)
+        def new_func(*args, **kwargs):
+            release = yield lock.Acquire()
+            result = yield Call(func, args, kwargs)
+            yield release
+            return result
+        return new_func
+    return decorator
